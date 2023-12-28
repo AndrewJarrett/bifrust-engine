@@ -31,11 +31,10 @@ fn main() -> Result<()> {
 
     // App
     let mut app = unsafe { App::create(&window)? };
-    let mut destroying = false;
 
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    event_loop.run(move |event, elwt| {
+    let _ = event_loop.run(move |event, elwt| {
         match event {
             // Render a frame if our Vulkan app is not being destroyed.
             Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
@@ -43,7 +42,6 @@ fn main() -> Result<()> {
             }
             // Destroy our Vulkan app
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                destroying = true;
                 elwt.exit();
                 unsafe { app.destroy(); }
             }
@@ -134,3 +132,26 @@ impl App {
 /// The Vulkan handles and associated properties used by our Vulkan app.
 #[derive(Clone, Debug, Default)]
 struct AppData {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_create_window() {
+        assert!(true);
+        // Window
+        /*
+        let event_loop = EventLoop::new().unwrap();
+        let window = WindowBuilder::new()
+            .with_title("Bifrost Engine Tester")
+            .with_inner_size(LogicalSize::new(1024, 768))
+            .build(&event_loop);
+
+        let mut app = unsafe { App::create(&window) };
+
+        Ok(app);
+        */
+    }
+}
+            
