@@ -1,0 +1,18 @@
+[package]
+name = "bifrost_engine"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1" # Simple error handling
+log = "0.4" # Used for logging statements
+cgmath = "0.18" # Rust replacement for GLM (graphics math library)
+png = "0.17" # Used to load PNGs as textures
+pretty_env_logger = "0.4" # Print logs to console
+thiserror = "1" # Define custom errors types without boilerplate
+tobj = { version = "3", features = ["log"] } # Load 3D models in Wavefront .obj format
+vulkanalia = { version = "=0.21.0", features = ["libloading", "provisional", "window"] } # Vulkan API wrapper
+winit = { version = "0.29.6", features = ["rwh_05"] } # Window handling, forcr raw-window-handle version
+
