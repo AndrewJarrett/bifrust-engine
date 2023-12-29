@@ -6,7 +6,7 @@
     clippy::unnecessary_wraps
 )]
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Result, Error};
 use log::*;
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::window as vk_window;
@@ -132,26 +132,3 @@ impl App {
 /// The Vulkan handles and associated properties used by our Vulkan app.
 #[derive(Clone, Debug, Default)]
 struct AppData {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn should_create_window() {
-        assert!(true);
-        // Window
-        /*
-        let event_loop = EventLoop::new().unwrap();
-        let window = WindowBuilder::new()
-            .with_title("Bifrost Engine Tester")
-            .with_inner_size(LogicalSize::new(1024, 768))
-            .build(&event_loop);
-
-        let mut app = unsafe { App::create(&window) };
-
-        Ok(app);
-        */
-    }
-}
-            
