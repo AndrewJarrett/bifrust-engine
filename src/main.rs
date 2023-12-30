@@ -11,6 +11,7 @@ use std::ffi::CStr;
 use std::os::raw::c_void;
 
 use anyhow::{anyhow, Result, Error};
+use thiserror::Error;
 use log::*;
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::window as vk_window;
@@ -99,7 +100,6 @@ extern "system" fn debug_callback(
 
     vk::FALSE
 }
-    
 
 /// Our Vulkan app.
 #[derive(Clone, Debug)]
@@ -116,6 +116,7 @@ impl App {
         let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
         let mut data = AppData::default();
         let instance = Self::create_instance(window, &entry, &mut data)?;
+        pick_physical_device(&instance, &mut data)?;
         Ok(Self { entry, instance, data })
     }
 
@@ -206,6 +207,14 @@ impl App {
 
         self.instance.destroy_instance(None);
     }
+}
+
+#[derive(Debug, Error)]
+#[error("Missing {0}.")]
+pub struct SuitabilityError(pub &'static str);
+
+unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) -> Result<()> {
+    Ok(())
 }
 
 /// The Vulkan handles and associated properties used by our Vulkan app.
