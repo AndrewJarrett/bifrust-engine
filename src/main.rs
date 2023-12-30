@@ -36,7 +36,7 @@ fn main() -> Result<()> {
     // Window
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new()
-        .with_title("Bifrost Engine Tester")
+        .with_title("Bifrust Engine Tester")
         .with_inner_size(LogicalSize::new(1024, 768))
         .build(&event_loop)?;
 
@@ -126,7 +126,7 @@ impl App {
         data: &mut AppData
     ) -> Result<Instance> {
         let application_info = vk::ApplicationInfo::builder()
-            .application_name(b"Bifrost Engine\0")
+            .application_name(b"Bifrust Engine\0")
             .application_version(vk::make_version(1, 0, 0))
             .engine_name(b"No Engine\0")
             .engine_version(vk::make_version(1, 0, 0))
