@@ -125,6 +125,7 @@ impl App {
         let device = create_logical_device(&entry, &instance, &mut data)?;
         create_swapchain(window, &instance, &device, &mut data)?;
         create_swapchain_image_views(&device, &mut data)?;
+        create_pipeline(&device, &mut data)?;
         Ok(Self { entry, instance, data, device })
     }
 
@@ -223,6 +224,10 @@ impl App {
         self.instance.destroy_surface_khr(self.data.surface, None);
         self.instance.destroy_instance(None);
     }
+}
+
+unsafe fn create_pipeline(device: &Device, data: &mut AppData) -> Result<()> {
+    Ok(())
 }
 
 unsafe fn create_swapchain_image_views(
