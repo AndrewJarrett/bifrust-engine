@@ -67,13 +67,22 @@ fn main() -> Result<()> {
 
     let _ = event_loop.run(move |event, elwt| {
         match event {
+            // Request a redraw to render continuousl
+            Event::AboutToWait if !destroying && !minimized => {
+                window.request_redraw();
+            }
             // Render a frame if our Vulkan app is not being destroyed.
-            Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } 
-                if !destroying && !minimized => {
-                    unsafe { app.render(&window) }.unwrap();
+            Event::WindowEvent {
+                event: WindowEvent::RedrawRequested,
+                ..
+            } => {
+                unsafe { app.render(&window) }.unwrap();
             }
             // Handle window is resized
-            Event::WindowEvent { event: WindowEvent::Resized(size), .. } => {
+            Event::WindowEvent {
+                event: WindowEvent::Resized(size),
+                ..
+            } => {
                 if size.width == 0 || size.height == 0 {
                     minimized = true;
                 } else {
@@ -82,7 +91,10 @@ fn main() -> Result<()> {
                 }
             }
             // Destroy our Vulkan app
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+            Event::WindowEvent { 
+                event: WindowEvent::CloseRequested,
+                .. 
+            } => {
                 destroying = true;
                 elwt.exit();
                 unsafe { app.device.device_wait_idle().unwrap(); }
@@ -1648,13 +1660,13 @@ fn get_swapchain_extent(
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 struct Vertex {
-    pos: Vec2,
+    pos: Vec3,
     color: Vec3,
     tex_coord: Vec2,
 }
 
 impl Vertex {
-    const fn new(pos: Vec2, color: Vec3, tex_coord: Vec2) -> Self {
+    const fn new(pos: Vec3, color: Vec3, tex_coord: Vec2) -> Self {
         Self { pos, color, tex_coord }
     }
 
@@ -1670,7 +1682,7 @@ impl Vertex {
         let pos = vk::VertexInputAttributeDescription::builder()
             .binding(0)
             .location(0)
-            .format(vk::Format::R32G32_SFLOAT)
+            .format(vk::Format::R32G32B32_SFLOAT)
             .offset(0)
             .build();
 
@@ -1678,14 +1690,14 @@ impl Vertex {
             .binding(0)
             .location(1)
             .format(vk::Format::R32G32B32_SFLOAT)
-            .offset(size_of::<Vec2>() as u32)
+            .offset(size_of::<Vec3>() as u32)
             .build();
 
         let tex_coord = vk::VertexInputAttributeDescription::builder()
             .binding(0)
             .location(2)
             .format(vk::Format::R32G32_SFLOAT)
-            .offset((size_of::<Vec2>() + size_of::<Vec3>()) as u32)
+            .offset((size_of::<Vec3>() + size_of::<Vec3>()) as u32)
             .build();
 
         [pos, color, tex_coord]
@@ -1693,10 +1705,10 @@ impl Vertex {
 }
 
 static VERTICES: [Vertex; 4] = [
-    Vertex::new(vec2(-0.5, -0.5), vec3(1.0, 0.0, 0.0), vec2(1.0, 0.0)),
-    Vertex::new(vec2(0.5, -0.5), vec3(0.0, 1.0, 0.0), vec2(0.0, 0.0)),
-    Vertex::new(vec2(0.5, 0.5), vec3(0.0, 0.0, 1.0), vec2(0.0, 1.0)),
-    Vertex::new(vec2(-0.5, 0.5), vec3(1.0, 1.0, 1.0), vec2(1.0, 1.0)),
+    Vertex::new(vec3(-0.5, -0.5, 0.0), vec3(1.0, 0.0, 0.0), vec2(1.0, 0.0)),
+    Vertex::new(vec3(0.5, -0.5, 0.0), vec3(0.0, 1.0, 0.0), vec2(0.0, 0.0)),
+    Vertex::new(vec3(0.5, 0.5, 0.0), vec3(0.0, 0.0, 1.0), vec2(0.0, 1.0)),
+    Vertex::new(vec3(-0.5, 0.5, 0.0), vec3(1.0, 1.0, 1.0), vec2(1.0, 1.0)),
 ];
 
 const INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
