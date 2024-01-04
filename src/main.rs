@@ -333,11 +333,6 @@ impl App {
     unsafe fn update_uniform_buffer(&self, image_index: usize) -> Result<()> {
         let time = self.start.elapsed().as_secs_f32();
 
-        let model = Mat4::from_axis_angle(
-            vec3(0.0, 0.0, 1.0),
-            Deg(90.0) * time
-        );
-
         let view = Mat4::look_at_rh(
             point3(2.0, 2.0, 2.0),
             point3(0.0, 0.0, 0.0),
@@ -352,15 +347,14 @@ impl App {
             0.0, 0.0, 1.0 / 2.0, 1.0,
         );
 
-        let proj = correction 
-            * cgmath::perspective(
+        let proj = correction * cgmath::perspective(
                 Deg(45.0),
                 self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32,
                 0.1,
                 10.0,
         );
 
-        let ubo = UniformBufferObject { model, view, proj };
+        let ubo = UniformBufferObject { view, proj };
 
         let memory = self.device.map_memory(
             self.data.uniform_buffers_memory[image_index],
@@ -1428,6 +1422,16 @@ unsafe fn create_command_buffers(device: &Device, data: &mut AppData) -> Result<
 
     data.command_buffers = device.allocate_command_buffers(&allocate_info)?;
 
+    let model = Mat4::from_axis_angle(
+        vec3(0.0, 0.0, 1.0),
+        Deg(0.0)
+    );
+
+    let model_bytes = std::slice::from_raw_parts(
+        &model as *const Mat4 as *const u8,
+        size_of::<Mat4>()
+    );
+
     for (i, command_buffer) in data.command_buffers.iter().enumerate() {
         let inheritance = vk::CommandBufferInheritanceInfo::builder();
 
@@ -1481,6 +1485,21 @@ unsafe fn create_command_buffers(device: &Device, data: &mut AppData) -> Result<
             0,
             &[data.descriptor_sets[i]],
             &[],
+        );
+
+        device.cmd_push_constants(
+            *command_buffer,
+            data.pipeline_layout,
+            vk::ShaderStageFlags::VERTEX,
+            0,
+            model_bytes,
+        );
+        device.cmd_push_constants(
+            *command_buffer,
+            data.pipeline_layout,
+            vk::ShaderStageFlags::FRAGMENT,
+            64,
+            &0.25f32.to_ne_bytes()[..],
         );
         device.cmd_draw_indexed(*command_buffer, data.indices.len() as u32, 1, 0, 0, 0);
 
@@ -1671,9 +1690,9 @@ unsafe fn create_pipeline(device: &Device, data: &mut AppData) -> Result<()> {
 
     let attachment = vk::PipelineColorBlendAttachmentState::builder()
         .color_write_mask(vk::ColorComponentFlags::all())
-        .blend_enable(false)
-        .src_color_blend_factor(vk::BlendFactor::ONE)
-        .dst_color_blend_factor(vk::BlendFactor::ZERO)
+        .blend_enable(true)
+        .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+        .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
         .color_blend_op(vk::BlendOp::ADD)
         .src_alpha_blend_factor(vk::BlendFactor::ONE)
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
@@ -1694,9 +1713,21 @@ unsafe fn create_pipeline(device: &Device, data: &mut AppData) -> Result<()> {
     let dynamic_state = vk::PipelineDynamicStateCreateInfo::builder()
         .dynamic_states(dynamic_states);
 
+    let vert_push_constant_range = vk::PushConstantRange::builder()
+        .stage_flags(vk::ShaderStageFlags::VERTEX)
+        .offset(0)
+        .size(64 /* 16 x 4 byte floats */);
+
+    let frag_push_constant_range = vk::PushConstantRange::builder()
+        .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+        .offset(64)
+        .size(4);
+
     let set_layouts = &[data.descriptor_set_layout];
+    let push_constant_ranges = &[vert_push_constant_range, frag_push_constant_range];
     let layout_info = vk::PipelineLayoutCreateInfo::builder()
-        .set_layouts(set_layouts);
+        .set_layouts(set_layouts)
+        .push_constant_ranges(push_constant_ranges);
 
     data.pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
 
@@ -2165,7 +2196,6 @@ impl Hash for Vertex {
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 struct UniformBufferObject {
-    model: Mat4,
     view: Mat4,
     proj: Mat4,
 }
