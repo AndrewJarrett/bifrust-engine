@@ -338,14 +338,6 @@ impl App {
 
         let command_buffer = self.data.command_buffers[image_index];
 
-        let allocate_info = vk::CommandBufferAllocateInfo::builder()
-            .command_pool(self.data.command_pool)
-            .level(vk::CommandBufferLevel::PRIMARY)
-            .command_buffer_count(1);
-
-        let command_buffer = self.device.allocate_command_buffers(&allocate_info)?[0];
-        self.data.command_buffers[image_index] = command_buffer;
-
         let time = self.start.elapsed().as_secs_f32();
 
         let model = Mat4::from_axis_angle(
@@ -428,8 +420,6 @@ impl App {
     }
 
     unsafe fn update_uniform_buffer(&self, image_index: usize) -> Result<()> {
-        let time = self.start.elapsed().as_secs_f32();
-
         let view = Mat4::look_at_rh(
             point3(2.0, 2.0, 2.0),
             point3(0.0, 0.0, 0.0),
@@ -1748,7 +1738,7 @@ unsafe fn create_pipeline(device: &Device, data: &mut AppData) -> Result<()> {
     let vert_push_constant_range = vk::PushConstantRange::builder()
         .stage_flags(vk::ShaderStageFlags::VERTEX)
         .offset(0)
-        .size(64 /* 16 x 4 byte floats */);
+        .size(64);
 
     let frag_push_constant_range = vk::PushConstantRange::builder()
         .stage_flags(vk::ShaderStageFlags::FRAGMENT)
@@ -1942,6 +1932,8 @@ pub struct SuitabilityError(pub &'static str);
 unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) -> Result<()> {
     for physical_device in instance.enumerate_physical_devices()? {
         let properties = instance.get_physical_device_properties(physical_device);
+
+        info!("Max push constants is {}.", properties.limits.max_push_constants_size);
 
         if let Err(error) = check_physical_device(instance, data, physical_device) {
             warn!("Skipping physical device (`{}`): {}", properties.device_name, error);
