@@ -1,57 +1,55 @@
 #![allow(
     dead_code,
     unused_variables,
-    clippy::too_many_argumnets,
+    clippy::manual_slice_size_calculation,
+    clippy::too_many_arguments,
     clippy::unnecessary_wraps
 )]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::CStr;
-use std::os::raw::c_void;
-use std::mem::size_of;
-use std::ptr::copy_nonoverlapping as memcpy;
-use std::time::Instant;
 use std::fs::File;
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::io::BufReader;
+use std::mem::size_of;
+use std::os::raw::c_void;
+use std::ptr::copy_nonoverlapping as memcpy;
+use std::time::Instant;
 use std::ptr::slice_from_raw_parts;
 
-use cgmath::{vec2, vec3};
-use cgmath::{point3, Deg};
-
-type Vec2 = cgmath::Vector2<f32>;
-type Vec3 = cgmath::Vector3<f32>;
-type Mat4 = cgmath::Matrix4<f32>;
-
 use anyhow::{anyhow, Result};
-use thiserror::Error;
+use cgmath::{vec2, vec3, point3, Deg};
 use log::*;
-use vulkanalia::loader::{LibloadingLoader, LIBRARY};
-use vulkanalia::window as vk_window;
-use vulkanalia::prelude::v1_0::*;
-use vulkanalia::Version;
-use vulkanalia::vk::ExtDebugUtilsExtension;
-use vulkanalia::vk::KhrSurfaceExtension;
-use vulkanalia::vk::KhrSwapchainExtension;
+use thiserror::Error;
 use vulkanalia::bytecode::Bytecode;
+use vulkanalia::loader::{LibloadingLoader, LIBRARY};
+use vulkanalia::prelude::v1_0::*;
+use vulkanalia::window as vk_window;
+use vulkanalia::Version;
 use winit::dpi::LogicalSize;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
 
-const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
+use vulkanalia::vk::ExtDebugUtilsExtension;
+use vulkanalia::vk::KhrSurfaceExtension;
+use vulkanalia::vk::KhrSwapchainExtension;
 
-const VALIDATION_ENABLED: bool = 
-    cfg!(debug_assertions);
+const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 
-const VALIDATION_LAYER: vk::ExtensionName =
-    vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
+const VALIDATION_LAYER: vk::ExtensionName = vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
 
 const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[vk::KHR_SWAPCHAIN_EXTENSION.name];
 
+const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
+
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
+type Vec2 = cgmath::Vector2<f32>;
+type Vec3 = cgmath::Vector3<f32>;
+type Mat4 = cgmath::Matrix4<f32>;
+
+#[rustfmt::skip]
 fn main() -> Result<()> {
     pretty_env_logger::init();
 
@@ -175,10 +173,15 @@ impl App {
         create_descriptor_sets(&device, &mut data)?;
         create_command_buffers(&device, &mut data)?;
         create_sync_objects(&device, &mut data)?;
-        let frame = 0;
-        let resized = false;
-        let start = Instant::now();
-        Ok(Self { entry, instance, data, device, frame, resized, start })
+        Ok(Self { 
+            entry,
+            instance,
+            data,
+            device,
+            frame: 0,
+            resized: false,
+            start: Instant::now() 
+        })
     }
 
     /// Create our Vulkan instance.
@@ -257,11 +260,9 @@ impl App {
 
     /// Renders a frame for our Vulkan app.
     unsafe fn render(&mut self, window: &Window) -> Result<()> {
-        self.device.wait_for_fences(
-            &[self.data.in_flight_fences[self.frame]],
-            true,
-            u64::MAX,
-        )?;
+        let in_flight_fence = self.data.in_flight_fences[self.frame];
+
+        self.device.wait_for_fences(&[in_flight_fence], true, u64::MAX)?;
 
         let result = self.device.acquire_next_image_khr(
             self.data.swapchain,
@@ -276,23 +277,19 @@ impl App {
             Err(e) => return Err(anyhow!(e)),
         };
 
-        if !self.data.images_in_flight[image_index as usize].is_null() {
-            self.device.wait_for_fences(
-                &[self.data.images_in_flight[image_index as usize]],
-                true,
-                u64::MAX,
-            )?;
+        let image_in_flight = self.data.images_in_flight[image_index];
+        if !image_in_flight.is_null() {
+            self.device.wait_for_fences(&[image_in_flight], true, u64::MAX)?;
         }
 
-        self.data.images_in_flight[image_index as usize] =
-            self.data.in_flight_fences[self.frame];
+        self.data.images_in_flight[image_index] = image_in_flight;
 
         self.update_command_buffer(image_index)?;
         self.update_uniform_buffer(image_index)?;
 
         let wait_semaphores = &[self.data.image_available_semaphores[self.frame]];
         let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-        let command_buffers = &[self.data.command_buffers[image_index as usize]];
+        let command_buffers = &[self.data.command_buffers[image_index]];
         let signal_semaphores = &[self.data.render_finished_semaphores[self.frame]];
         let submit_info = vk::SubmitInfo::builder()
             .wait_semaphores(wait_semaphores)
@@ -300,13 +297,10 @@ impl App {
             .command_buffers(command_buffers)
             .signal_semaphores(signal_semaphores);
 
-        self.device.reset_fences(&[self.data.in_flight_fences[self.frame]])?;
+        self.device.reset_fences(&[in_flight_fence])?;
 
-        self.device.queue_submit(
-            self.data.graphics_queue, 
-            &[submit_info], 
-            self.data.in_flight_fences[self.frame],
-        )?;
+        self.device
+            .queue_submit(self.data.graphics_queue, &[submit_info], in_flight_fence)?;
 
         let swapchains = &[self.data.swapchain];
         let image_indices = &[image_index as u32];
@@ -316,10 +310,7 @@ impl App {
             .image_indices(image_indices);
 
         let result = self.device.queue_present_khr(self.data.present_queue, &present_info);
-
-        let changed = result == Ok(vk::SuccessCode::SUBOPTIMAL_KHR)
-            || result == Err(vk::ErrorCode::OUT_OF_DATE_KHR);
-
+        let changed = result == Ok(vk::SuccessCode::SUBOPTIMAL_KHR) || result == Err(vk::ErrorCode::OUT_OF_DATE_KHR);
         if self.resized || changed {
             self.resized = false;
             self.recreate_swapchain(window)?;
@@ -333,25 +324,23 @@ impl App {
     }
 
     unsafe fn update_command_buffer(&mut self, image_index: usize) -> Result<()> {
+        // Reset command pool
         let command_pool = self.data.command_pools[image_index];
         self.device.reset_command_pool(command_pool, vk::CommandPoolResetFlags::empty())?;
 
         let command_buffer = self.data.command_buffers[image_index];
 
+        // Update model
         let time = self.start.elapsed().as_secs_f32();
 
-        let model = Mat4::from_axis_angle(
-            vec3(0.0, 0.0, 1.0),
-            Deg(0.0) * time
-        );
+        let model = Mat4::from_axis_angle(vec3(0.0, 0.0, 1.0), Deg(90.0) * time);
 
-        let model_bytes = &*slice_from_raw_parts(
-            &model as *const Mat4 as *const u8,
-            size_of::<Mat4>()
-        );
+        let model_bytes = &*slice_from_raw_parts(&model as *const Mat4 as *const u8, size_of::<Mat4>());
 
-        let info = vk::CommandBufferBeginInfo::builder()
-            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+        let opacity = 0.25f32;
+        let opacity_bytes = &opacity.to_ne_bytes()[..];
+
+        let info = vk::CommandBufferBeginInfo::builder().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
         self.device.begin_command_buffer(command_buffer, &info)?;
 
@@ -366,10 +355,7 @@ impl App {
         };
 
         let depth_clear_value = vk::ClearValue {
-            depth_stencil: vk::ClearDepthStencilValue {
-                depth: 1.0,
-                stencil: 0,
-            },
+            depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 },
         };
 
         let clear_values = &[color_clear_value, depth_clear_value];
@@ -382,12 +368,7 @@ impl App {
         self.device.cmd_begin_render_pass(command_buffer, &info, vk::SubpassContents::INLINE);
         self.device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, self.data.pipeline);
         self.device.cmd_bind_vertex_buffers(command_buffer, 0, &[self.data.vertex_buffer], &[0]);
-        self.device.cmd_bind_index_buffer(
-            command_buffer,
-            self.data.index_buffer,
-            0,
-            vk::IndexType::UINT32
-        );
+        self.device.cmd_bind_index_buffer(command_buffer, self.data.index_buffer, 0, vk::IndexType::UINT32);
         self.device.cmd_bind_descriptor_sets(
             command_buffer,
             vk::PipelineBindPoint::GRAPHICS,
@@ -396,7 +377,6 @@ impl App {
             &[self.data.descriptor_sets[image_index]],
             &[],
         );
-
         self.device.cmd_push_constants(
             command_buffer,
             self.data.pipeline_layout,
@@ -409,7 +389,7 @@ impl App {
             self.data.pipeline_layout,
             vk::ShaderStageFlags::FRAGMENT,
             64,
-            &0.25f32.to_ne_bytes()[..],
+            opacity_bytes,
         );
         self.device.cmd_draw_indexed(command_buffer, self.data.indices.len() as u32, 1, 0, 0, 0);
         self.device.cmd_end_render_pass(command_buffer);
@@ -421,11 +401,12 @@ impl App {
 
     unsafe fn update_uniform_buffer(&self, image_index: usize) -> Result<()> {
         let view = Mat4::look_at_rh(
-            point3(2.0, 2.0, 2.0),
-            point3(0.0, 0.0, 0.0),
+            point3::<f32>(2.0, 2.0, 2.0),
+            point3::<f32>(0.0, 0.0, 0.0),
             vec3(0.0, 0.0, 1.0),
         );
 
+        #[rustfmt::skip]
         let correction = Mat4::new(
             1.0, 0.0,       0.0, 0.0,
             // We're also flipping the Y-axis with this line's -1.0
@@ -434,12 +415,13 @@ impl App {
             0.0, 0.0, 1.0 / 2.0, 1.0,
         );
 
-        let proj = correction * cgmath::perspective(
+        let proj = correction 
+            * cgmath::perspective(
                 Deg(45.0),
                 self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32,
                 0.1,
                 10.0,
-        );
+            );
 
         let ubo = UniformBufferObject { view, proj };
 
@@ -457,6 +439,7 @@ impl App {
         Ok(())
     }
 
+    #[rustfmt::skip]
     unsafe fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
         self.device.device_wait_idle()?;
         self.destroy_swapchain();
@@ -472,39 +455,32 @@ impl App {
         create_descriptor_pool(&self.device, &mut self.data)?;
         create_descriptor_sets(&self.device, &mut self.data)?;
         create_command_buffers(&self.device, &mut self.data)?;
-        self.data
-            .images_in_flight
-            .resize(self.data.swapchain_images.len(), vk::Fence::null());
+        self.data.images_in_flight.resize(self.data.swapchain_images.len(), vk::Fence::null());
 
         Ok(())
     }
 
     /// Destroys our Vulkan app.
+    #[rustfmt::skip]
     unsafe fn destroy(&mut self) {
+        self.device.device_wait_idle().unwrap();
+
         self.destroy_swapchain();
-        self.data.command_pools
-            .iter()
-            .for_each(|p| self.device.destroy_command_pool(*p, None));
+
+        self.data.in_flight_fences.iter().for_each(|f| self.device.destroy_fence(*f, None));
+        self.data.render_finished_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
+        self.data.image_available_semaphores.iter().for_each(|s| self.device.destroy_semaphore(*s, None));
+        self.data.command_pools.iter().for_each(|p| self.device.destroy_command_pool(*p, None));
+        self.device.free_memory(self.data.index_buffer_memory, None);
+        self.device.destroy_buffer(self.data.index_buffer, None);
+        self.device.free_memory(self.data.vertex_buffer_memory, None);
+        self.device.destroy_buffer(self.data.vertex_buffer, None);
         self.device.destroy_sampler(self.data.texture_sampler, None);
         self.device.destroy_image_view(self.data.texture_image_view, None);
-        self.device.destroy_image(self.data.texture_image, None);
         self.device.free_memory(self.data.texture_image_memory, None);
-        self.device.destroy_descriptor_set_layout(self.data.descriptor_set_layout, None);
-        self.device.destroy_buffer(self.data.index_buffer, None);
-        self.device.free_memory(self.data.index_buffer_memory, None);
-        self.device.destroy_buffer(self.data.vertex_buffer, None);
-        self.device.free_memory(self.data.vertex_buffer_memory, None);
-
-        self.data.in_flight_fences
-            .iter()
-            .for_each(|f| self.device.destroy_fence(*f, None));
-        self.data.render_finished_semaphores
-            .iter()
-            .for_each(|s| self.device.destroy_semaphore(*s, None));
-        self.data.image_available_semaphores
-            .iter()
-            .for_each(|s| self.device.destroy_semaphore(*s, None));
+        self.device.destroy_image(self.data.texture_image, None);
         self.device.destroy_command_pool(self.data.command_pool, None);
+        self.device.destroy_descriptor_set_layout(self.data.descriptor_set_layout, None);
         self.device.destroy_device(None);
         self.instance.destroy_surface_khr(self.data.surface, None);
 
@@ -515,32 +491,22 @@ impl App {
         self.instance.destroy_instance(None);
     }
 
+    #[rustfmt::skip]
     unsafe fn destroy_swapchain(&mut self) {
-        self.device.destroy_image_view(self.data.color_image_view, None);
-        self.device.free_memory(self.data.color_image_memory, None);
-        self.device.destroy_image(self.data.color_image, None);
+        self.device.destroy_descriptor_pool(self.data.descriptor_pool, None);
+        self.data.uniform_buffers_memory.iter().for_each(|m| self.device.free_memory(*m, None));
+        self.data.uniform_buffers.iter().for_each(|b| self.device.destroy_buffer(*b, None));
         self.device.destroy_image_view(self.data.depth_image_view, None);
         self.device.free_memory(self.data.depth_image_memory, None);
         self.device.destroy_image(self.data.depth_image, None);
-        self.device.destroy_descriptor_pool(self.data.descriptor_pool, None);
-
-        self.data.uniform_buffers
-            .iter()
-            .for_each(|b| self.device.destroy_buffer(*b, None));
-        self.data.uniform_buffers_memory
-            .iter()
-            .for_each(|m| self.device.free_memory(*m, None));
-        self.data.framebuffers
-            .iter()
-            .for_each(|f| self.device.destroy_framebuffer(*f, None));
+        self.device.destroy_image_view(self.data.color_image_view, None);
+        self.device.free_memory(self.data.color_image_memory, None);
+        self.device.destroy_image(self.data.color_image, None);
+        self.data.framebuffers.iter().for_each(|f| self.device.destroy_framebuffer(*f, None));
         self.device.destroy_pipeline(self.data.pipeline, None);
         self.device.destroy_pipeline_layout(self.data.pipeline_layout, None);
         self.device.destroy_render_pass(self.data.render_pass, None);
-
-        self.data.swapchain_image_views
-            .iter()
-            .for_each(|v| self.device.destroy_image_view(*v, None));
-        
+        self.data.swapchain_image_views.iter().for_each(|v| self.device.destroy_image_view(*v, None));
         self.device.destroy_swapchain_khr(self.data.swapchain, None);
     }
 }
@@ -1988,50 +1954,65 @@ unsafe fn check_physical_device_extensions(
 /// The Vulkan handles and associated properties used by our Vulkan app.
 #[derive(Clone, Debug, Default)]
 struct AppData {
-    surface: vk::SurfaceKHR,
+    // Debug
     messenger: vk::DebugUtilsMessengerEXT,
+    // Surface
+    surface: vk::SurfaceKHR,
+    // Physical Device / Logical Device
     physical_device: vk::PhysicalDevice,
     msaa_samples: vk::SampleCountFlags,
     graphics_queue: vk::Queue,
     present_queue: vk::Queue,
+    // Swapchain
     swapchain_format: vk::Format,
     swapchain_extent: vk::Extent2D,
     swapchain: vk::SwapchainKHR,
     swapchain_images: Vec<vk::Image>,
     swapchain_image_views: Vec<vk::ImageView>,
+    // Pipeline
     render_pass: vk::RenderPass,
     descriptor_set_layout: vk::DescriptorSetLayout,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
+    // Framebuffers
     framebuffers: Vec<vk::Framebuffer>,
+    // Command Pool
     command_pool: vk::CommandPool,
-    command_pools: Vec<vk::CommandPool>,
-    command_buffers: Vec<vk::CommandBuffer>,
-    image_available_semaphores: Vec<vk::Semaphore>,
-    render_finished_semaphores: Vec<vk::Semaphore>,
-    in_flight_fences: Vec<vk::Fence>,
-    images_in_flight: Vec<vk::Fence>,
+    // Color
+    color_image: vk::Image,
+    color_image_memory: vk::DeviceMemory,
+    color_image_view: vk::ImageView,
+    // Depth
+    depth_image: vk::Image,
+    depth_image_memory: vk::DeviceMemory,
+    depth_image_view: vk::ImageView,
+    // Texture
+    mip_levels: u32,
+    texture_image: vk::Image,
+    texture_image_memory: vk::DeviceMemory,
+    texture_image_view: vk::ImageView,
+    texture_sampler: vk::Sampler,
+    // Model
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
+    // Buffers
     vertex_buffer: vk::Buffer,
     vertex_buffer_memory: vk::DeviceMemory,
     index_buffer: vk::Buffer,
     index_buffer_memory: vk::DeviceMemory,
     uniform_buffers: Vec<vk::Buffer>,
     uniform_buffers_memory: Vec<vk::DeviceMemory>,
+    // Descriptors
     descriptor_pool: vk::DescriptorPool,
     descriptor_sets: Vec<vk::DescriptorSet>,
-    mip_levels: u32,
-    texture_image: vk::Image,
-    texture_image_memory: vk::DeviceMemory,
-    texture_image_view: vk::ImageView,
-    texture_sampler: vk::Sampler,
-    depth_image: vk::Image,
-    depth_image_memory: vk::DeviceMemory,
-    depth_image_view: vk::ImageView,
-    color_image: vk::Image,
-    color_image_memory: vk::DeviceMemory,
-    color_image_view: vk::ImageView,
+    // Command Buffers
+    command_pools: Vec<vk::CommandPool>,
+    command_buffers: Vec<vk::CommandBuffer>,
+    // Sync Objects
+    image_available_semaphores: Vec<vk::Semaphore>,
+    render_finished_semaphores: Vec<vk::Semaphore>,
+    in_flight_fences: Vec<vk::Fence>,
+    images_in_flight: Vec<vk::Fence>,
 }
 
 #[derive(Copy, Clone, Debug)]
