@@ -16,6 +16,7 @@ use std::os::raw::c_void;
 use std::ptr::copy_nonoverlapping as memcpy;
 use std::time::Instant;
 use std::ptr::slice_from_raw_parts;
+use std::f64::consts::FRAC_PI_2;
 
 use anyhow::{anyhow, Result};
 use cgmath::{vec2, vec3, point3, Deg};
@@ -27,10 +28,10 @@ use vulkanalia::prelude::v1_0::*;
 use vulkanalia::window as vk_window;
 use vulkanalia::Version;
 use winit::dpi::LogicalSize;
-use winit::event::{Event, WindowEvent, ElementState};
+use winit::event::{Event, WindowEvent, ElementState, DeviceEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{PhysicalKey, KeyCode};
-use winit::window::{Window, WindowBuilder};
+use winit::window::{Window, WindowBuilder, CursorGrabMode};
 
 use vulkanalia::vk::ExtDebugUtilsExtension;
 use vulkanalia::vk::KhrSurfaceExtension;
@@ -46,9 +47,13 @@ const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
+const VELOCITY: f32 = 0.1;
+const MOUSE_SPEED: f32 = 0.005;
+
 type Vec2 = cgmath::Vector2<f32>;
 type Vec3 = cgmath::Vector3<f32>;
 type Mat4 = cgmath::Matrix4<f32>;
+type Pt3  = cgmath::Point3<f32>;
 
 #[rustfmt::skip]
 fn main() -> Result<()> {
@@ -61,8 +66,16 @@ fn main() -> Result<()> {
         .with_inner_size(LogicalSize::new(1024, 768))
         .build(&event_loop)?;
 
+    // Grab the cursor
+    window.set_cursor_grab(CursorGrabMode::Confined)
+        .or_else(|_e| window.set_cursor_grab(CursorGrabMode::Locked))
+        .unwrap();
+
+    
+
     // App
     let mut app = unsafe { App::create(&window)? };
+    let mut close_requested = false;
     let mut destroying = false;
     let mut minimized = false;
 
@@ -70,32 +83,45 @@ fn main() -> Result<()> {
 
     let _ = event_loop.run(move |event, elwt| {
         match event {
-            // Request a redraw to render continuousl
+            // Request a redraw to render continuously
             Event::AboutToWait if !destroying && !minimized => {
-                window.request_redraw();
+                if close_requested {
+                    elwt.exit();
+                } else {
+                    window.request_redraw();
+                }
             }
             // Render a frame if our Vulkan app is not being destroyed.
-            Event::WindowEvent {
-                event: WindowEvent::RedrawRequested,
-                ..
-            } => {
+            Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
+                app.delta_time = app.start.elapsed().as_secs_f32();
+
                 unsafe { app.render(&window) }.unwrap();
             }
-            // Handle user input
+            // Handle user input - keyboard
             Event::WindowEvent { event: WindowEvent::KeyboardInput { event, .. }, .. } => {
                 if event.state == ElementState::Pressed {
                     match event.physical_key {
                         PhysicalKey::Code(KeyCode::ArrowLeft) if app.models > 1 => app.models -= 1,
                         PhysicalKey::Code(KeyCode::ArrowRight) if app.models < 4 => app.models += 1,
+                        PhysicalKey::Code(KeyCode::KeyW) => app.update_position(KeyCode::KeyW),
+                        PhysicalKey::Code(KeyCode::KeyA) => app.update_position(KeyCode::KeyA), 
+                        PhysicalKey::Code(KeyCode::KeyS) => app.update_position(KeyCode::KeyS), 
+                        PhysicalKey::Code(KeyCode::KeyD) => app.update_position(KeyCode::KeyD), 
+                        // Escape from the app
+                        PhysicalKey::Code(KeyCode::Escape) => {
+                            close_requested = true;
+                        }
                         _ => { }
                     }
                 }
             }
+            // Mouse movement
+            Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
+                app.delta_mouse = delta;
+                //dbg!(app.delta_mouse);
+            }
             // Handle window is resized
-            Event::WindowEvent {
-                event: WindowEvent::Resized(size),
-                ..
-            } => {
+            Event::WindowEvent { event: WindowEvent::Resized(size), .. } => {
                 if size.width == 0 || size.height == 0 {
                     minimized = true;
                 } else {
@@ -104,10 +130,7 @@ fn main() -> Result<()> {
                 }
             }
             // Destroy our Vulkan app
-            Event::WindowEvent { 
-                event: WindowEvent::CloseRequested,
-                .. 
-            } => {
+            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
                 destroying = true;
                 elwt.exit();
                 unsafe { app.device.device_wait_idle().unwrap(); }
@@ -130,7 +153,15 @@ struct App {
     frame: usize,
     resized: bool,
     start: Instant,
+    delta_time: f32,
     models: usize,
+    position: Pt3,
+    direction: Vec3,
+    right: Vec3,
+    up: Vec3,
+    vertical_angle: f32,
+    horizontal_angle: f32,
+    delta_mouse: (f64, f64),
 }
 
 impl App {
@@ -171,7 +202,15 @@ impl App {
             frame: 0,
             resized: false,
             start: Instant::now(),
+            delta_time: Instant::now().elapsed().as_secs_f32(),
             models: 1,
+            position: point3::<f32>(6.0, 0.0, 2.0),
+            direction: vec3::<f32>(0.0, 0.0, 0.0),
+            right: vec3::<f32>(0.0, 0.0, 0.0),
+            up: vec3::<f32>(0.0, 0.0, 0.0),
+            vertical_angle: 0.0,
+            horizontal_angle: 0.0,
+            delta_mouse: (0.0, 0.0),
         })
     }
 
@@ -306,11 +345,9 @@ impl App {
         let y = (((model_index % 2) as f32) * 2.5) - 1.25;
         let z = (((model_index / 2) as f32) * -2.0) + 1.0;
 
-        let time = self.start.elapsed().as_secs_f32();
-
         let model = Mat4::from_translation(vec3(0.0, y, z)) * Mat4::from_axis_angle(
             vec3(0.0, 0.0, 1.0),
-            Deg(90.0) * time
+            Deg(90.0) * self.delta_time
         );
 
         let model_bytes = &*slice_from_raw_parts(&model as *const Mat4 as *const u8, size_of::<Mat4>());
@@ -362,10 +399,12 @@ impl App {
     }
 
     unsafe fn update_uniform_buffer(&self, image_index: usize) -> Result<()> {
+        let up = self.right.cross(self.direction);
+
         let view = Mat4::look_at_rh(
-            point3::<f32>(6.0, 0.0, 2.0),
-            point3::<f32>(0.0, 0.0, 0.0),
-            vec3(0.0, 0.0, 1.0),
+            self.position,
+            self.position + self.direction,
+            up,
         );
 
         #[rustfmt::skip]
@@ -377,13 +416,21 @@ impl App {
             0.0, 0.0, 1.0 / 2.0, 1.0,
         );
 
+        let proj_original = cgmath::perspective(
+            Deg(45.0),
+            self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32,
+            0.1,
+            100.0,
+        );
+
         let proj = correction 
             * cgmath::perspective(
                 Deg(45.0),
                 self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32,
                 0.1,
-                10.0,
+                100.0,
             );
+        dbg!(correction, proj_original, proj);
 
         let ubo = UniformBufferObject { view, proj };
 
@@ -399,6 +446,42 @@ impl App {
         self.device.unmap_memory(self.data.uniform_buffers_memory[image_index]);
 
         Ok(())
+    }
+
+    fn update_position(&mut self, key: KeyCode) -> () {
+        let direction = self.get_direction();
+        let right = self.get_right();
+
+        match key {
+            KeyCode::KeyW => self.position -= self.direction * VELOCITY * self.delta_time,
+            KeyCode::KeyA => self.position += self.right * VELOCITY * self.delta_time,
+            KeyCode::KeyS => self.position += self.direction * VELOCITY * self.delta_time,
+            KeyCode::KeyD => self.position -= self.right * VELOCITY * self.delta_time,
+            _ => {}
+        }
+    }
+
+    fn get_direction(&mut self) -> Result<Vec3> {
+        self.horizontal_angle    += MOUSE_SPEED * self.delta_time * (self.data.swapchain_extent.width as f32 / 2.0 - self.delta_mouse.0 as f32);
+        self.vertical_angle      += MOUSE_SPEED * self.delta_time * (self.data.swapchain_extent.height as f32 / 2.0 - self.delta_mouse.1 as f32);
+
+        let direction = vec3(
+            self.vertical_angle.cos() * self.horizontal_angle.sin(),
+            self.vertical_angle.sin(),
+            self.vertical_angle.cos() * self.horizontal_angle.cos()
+        );
+
+        Ok(direction)
+    }
+
+    fn get_right(&mut self) -> Result<Vec3> {
+        let right = vec3(
+            (self.horizontal_angle - FRAC_PI_2 as f32).sin(),
+            0.0,
+            (self.horizontal_angle - FRAC_PI_2 as f32).cos()
+        );
+
+        Ok(right)
     }
 
     #[rustfmt::skip]
