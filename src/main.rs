@@ -1,6 +1,6 @@
-use bifrust::run;
+use bifrust::app::App;
 
 #[rustfmt::skip]
 fn main() {
-    run();
+    unsafe { App::run() };
 }

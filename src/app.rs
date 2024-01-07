@@ -1,10 +1,13 @@
 #![allow(
     dead_code,
     unused_variables,
+    unused_imports,
     clippy::manual_slice_size_calculation,
     clippy::too_many_arguments,
     clippy::unnecessary_wraps
 )]
+
+use crate::window::BfWindow;
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::CStr;
@@ -27,12 +30,20 @@ use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::window as vk_window;
 use vulkanalia::Version;
-use winit::window::Window;
-use winit::keyboard::KeyCode;
+use winit::{
+    event::*,
+    dpi::LogicalSize,
+    event_loop::{ControlFlow, EventLoop},
+    keyboard::{PhysicalKey, KeyCode},
+    window::{Window, WindowBuilder, CursorGrabMode},
+};
 
 use vulkanalia::vk::ExtDebugUtilsExtension;
 use vulkanalia::vk::KhrSurfaceExtension;
 use vulkanalia::vk::KhrSwapchainExtension;
+
+#[cfg(target_arch="wasm32")]
+use wasm_bindgen::prelude::*;
 
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 
@@ -74,6 +85,92 @@ pub struct App {
 }
 
 impl App {
+
+    #[cfg_attr(target_arch="wasm32", wasm_bindgen(start))]
+    pub unsafe fn run() {
+        cfg_if::cfg_if! {
+            if #[cfg(target_arch = "wasm32")] {
+                std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+                console_log::init_with_level(log::Level::Warn).expect("Couldn't initialize logger");
+            } else {
+                pretty_env_logger::init();
+            }
+        }
+
+        // Window
+        let mut bf_window = BfWindow::new(1024, 768, "Bifrust Engine Tester".to_string()).unwrap();
+
+        // App
+        let mut app = unsafe { App::create(&bf_window.window).unwrap() };
+
+        let extension_count = unsafe { app.get_extension_count() };
+        info!("Found {} physical device extension!", extension_count);
+
+        bf_window.event_loop.set_control_flow(ControlFlow::Poll);
+
+        let _ = bf_window.event_loop.run(move |event, elwt| {
+            match event {
+                // Request a redraw to render continuously
+                Event::AboutToWait if !bf_window.minimized => {
+                    if bf_window.destroying {
+                        elwt.exit();
+                    } else {
+                        bf_window.window.request_redraw();
+                    }
+                }
+                // Render a frame if our Vulkan app is not being destroyed.
+                Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
+                    if bf_window.destroying { println!("Redraw") };
+                    app.delta_time = app.start.elapsed().as_secs_f32();
+
+                    unsafe { app.render(&bf_window.window) }.unwrap();
+                }
+                // Handle user input - keyboard
+                Event::WindowEvent { event: WindowEvent::KeyboardInput { event, .. }, .. } => {
+                    if bf_window.destroying { println!("Keyboard") };
+                    if event.state == ElementState::Pressed {
+                        match event.physical_key {
+                            PhysicalKey::Code(KeyCode::ArrowLeft) if app.models > 1 => app.models -= 1,
+                            PhysicalKey::Code(KeyCode::ArrowRight) if app.models < 4 => app.models += 1,
+                            PhysicalKey::Code(KeyCode::KeyW) => app.update_position(KeyCode::KeyW),
+                            PhysicalKey::Code(KeyCode::KeyA) => app.update_position(KeyCode::KeyA), 
+                            PhysicalKey::Code(KeyCode::KeyS) => app.update_position(KeyCode::KeyS), 
+                            PhysicalKey::Code(KeyCode::KeyD) => app.update_position(KeyCode::KeyD), 
+                            // Escape from the app
+                            PhysicalKey::Code(KeyCode::Escape) => {
+                                bf_window.destroying = true;
+                            }
+                            _ => { }
+                        }
+                    }
+                }
+                // Mouse movement
+                Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
+                    if bf_window.destroying { println!("Mouse") };
+                    app.delta_mouse = delta;
+                    //dbg!(app.delta_mouse);
+                }
+                // Handle window is resized
+                Event::WindowEvent { event: WindowEvent::Resized(size), .. } => {
+                    if size.width == 0 || size.height == 0 {
+                        bf_window.minimized = true;
+                    } else {
+                        bf_window.minimized = false;
+                        app.resized = true;
+                    }
+                }
+                // Destroy our Vulkan app
+                Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+                    bf_window.destroying = true;
+                    elwt.exit();
+                    unsafe { app.device.device_wait_idle().unwrap(); }
+                    unsafe { app.destroy(); }
+                }
+                _ => {}
+            }
+        });
+    }
+
     /// Creates our Vulkan app.
     pub unsafe fn create(window: &Window) -> Result<Self> {
         let loader = LibloadingLoader::new(LIBRARY)?;
@@ -319,10 +416,16 @@ impl App {
     unsafe fn update_uniform_buffer(&self, image_index: usize) -> Result<()> {
         let up = self.right.cross(self.direction);
 
-        let view = Mat4::look_at_rh(
+        let view_change = Mat4::look_at_rh(
             self.position,
             self.position + self.direction,
             up,
+        );
+
+        let view = Mat4::look_at_rh(
+            point3(6.0, 0.0, 2.0),
+            point3(0.0, 0.0, 0.0),
+            vec3(0.0, 0.0, 1.0)
         );
 
         #[rustfmt::skip]
