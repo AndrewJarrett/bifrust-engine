@@ -7,19 +7,24 @@ use winit::{
     event_loop::EventLoop,
     window::{Window, WindowBuilder}
 };
-use std::io::Result;
+use vulkanalia::prelude::v1_0::*;
+use vulkanalia::window as vk_window;
+use std::error::Error;
+//use anyhow::anyhow;
+//use std::io::{Result, Error};
 
 #[derive(Debug)]
 pub struct BfWindow {
     pub window: Window,
     pub event_loop: EventLoop<()>,
+    pub surface: Option<vk::SurfaceKHR>,
     pub destroying: bool,
     pub minimized: bool,
 }
 
 impl BfWindow {
 
-    pub fn new(width: u16, height: u16, title: String) -> Result<Self> {
+    pub fn new(width: u16, height: u16, title: String) -> Result<Self, Box<dyn Error>> {
         let event_loop = EventLoop::new().unwrap();
         let window = WindowBuilder::new()
             .with_title(title)
@@ -55,9 +60,27 @@ impl BfWindow {
         Ok(Self {
             window,
             event_loop,
+            surface: None,
             destroying: false,
             minimized: false,
         })
+    }
+
+    pub fn create_window_surface(
+        &mut self, 
+        instance: &Instance
+    ) -> Result<Option<vk::SurfaceKHR>, Box<dyn Error>> {
+        let surface = Some(
+            unsafe {
+                vk_window::create_surface(&instance, &self.window, &self.window)?
+            }
+        );
+
+        if self.surface.is_none() {
+            self.surface = surface;
+        }
+
+        Ok(surface)
     }
 
 }

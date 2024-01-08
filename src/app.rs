@@ -451,7 +451,7 @@ impl App {
                 Deg(45.0),
                 self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32,
                 0.1,
-                100.0,
+                200.0,
             );
         //dbg!(correction, proj_original, proj);
 
@@ -1436,6 +1436,7 @@ unsafe fn create_texture_image(
     data: &mut AppData,
 ) -> Result<()> {
     let image = File::open("resources/viking_room.png")?;
+    //let image = File::open("resources/orange-3d.png")?;
 
     let decoder = png::Decoder::new(image);
     let mut reader = decoder.read_info()?;
@@ -1707,6 +1708,7 @@ unsafe fn create_texture_sampler(device: &Device, data: &mut AppData) -> Result<
 
 fn load_model(data: &mut AppData) -> Result<()> {
     let mut reader = BufReader::new(File::open("resources/viking_room.obj")?);
+    //let mut reader = BufReader::new(File::open("resources/orange-3d.obj")?);
 
     let (models, _) = tobj::load_obj_buf(
         &mut reader,
