@@ -8,6 +8,7 @@
 )]
 
 use crate::window::BfWindow;
+use crate::window::BfWindowData;
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::CStr;
@@ -32,10 +33,9 @@ use vulkanalia::window as vk_window;
 use vulkanalia::Version;
 use winit::{
     event::*,
-    dpi::LogicalSize,
     event_loop::{ControlFlow, EventLoop},
     keyboard::{PhysicalKey, KeyCode},
-    window::{Window, WindowBuilder, CursorGrabMode},
+    window::Window,
 };
 
 use vulkanalia::vk::ExtDebugUtilsExtension;
@@ -69,6 +69,7 @@ pub struct App {
     entry: Entry,
     pub instance: Instance,
     pub data: AppData,
+    pub bf_window_data: BfWindowData,
     pub device: Device,
     frame: usize,
     pub resized: bool,
@@ -98,21 +99,22 @@ impl App {
         }
 
         // Window
-        let mut bf_window = BfWindow::new(1024, 768, "Bifrust Engine Tester".to_string()).unwrap();
+        let event_loop = EventLoop::new().unwrap();
+        let bf_window = BfWindow::new(1024, 768, "Bifrust Engine Tester".to_string(), &event_loop).unwrap();
 
         // App
-        let mut app = unsafe { App::create(&bf_window.window).unwrap() };
+        let mut app = unsafe { App::create(&bf_window).unwrap() };
 
         let extension_count = unsafe { app.get_extension_count() };
         info!("Found {} physical device extension!", extension_count);
 
-        bf_window.event_loop.set_control_flow(ControlFlow::Poll);
+        event_loop.set_control_flow(ControlFlow::Poll);
 
-        let _ = bf_window.event_loop.run(move |event, elwt| {
+        let _ = event_loop.run(move |event, elwt| {
             match event {
                 // Request a redraw to render continuously
-                Event::AboutToWait if !bf_window.minimized => {
-                    if bf_window.destroying {
+                Event::AboutToWait if !app.bf_window_data.minimized => {
+                    if app.bf_window_data.destroying {
                         elwt.exit();
                     } else {
                         bf_window.window.request_redraw();
@@ -120,14 +122,14 @@ impl App {
                 }
                 // Render a frame if our Vulkan app is not being destroyed.
                 Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
-                    if bf_window.destroying { println!("Redraw") };
+                    if app.bf_window_data.destroying { println!("Redraw") };
                     app.delta_time = app.start.elapsed().as_secs_f32();
 
-                    unsafe { app.render(&bf_window.window) }.unwrap();
+                    unsafe { app.render(&bf_window) }.unwrap();
                 }
                 // Handle user input - keyboard
                 Event::WindowEvent { event: WindowEvent::KeyboardInput { event, .. }, .. } => {
-                    if bf_window.destroying { println!("Keyboard") };
+                    if app.bf_window_data.destroying { println!("Keyboard") };
                     if event.state == ElementState::Pressed {
                         match event.physical_key {
                             PhysicalKey::Code(KeyCode::ArrowLeft) if app.models > 1 => app.models -= 1,
@@ -138,7 +140,7 @@ impl App {
                             PhysicalKey::Code(KeyCode::KeyD) => app.update_position(KeyCode::KeyD), 
                             // Escape from the app
                             PhysicalKey::Code(KeyCode::Escape) => {
-                                bf_window.destroying = true;
+                                app.bf_window_data.destroying = true;
                             }
                             _ => { }
                         }
@@ -146,25 +148,25 @@ impl App {
                 }
                 // Mouse movement
                 Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
-                    if bf_window.destroying { println!("Mouse") };
+                    if app.bf_window_data.destroying { println!("Mouse") };
                     app.delta_mouse = delta;
                     //dbg!(app.delta_mouse);
                 }
                 // Handle window is resized
                 Event::WindowEvent { event: WindowEvent::Resized(size), .. } => {
                     if size.width == 0 || size.height == 0 {
-                        bf_window.minimized = true;
+                        app.bf_window_data.minimized = true;
                     } else {
-                        bf_window.minimized = false;
+                        app.bf_window_data.minimized = false;
                         app.resized = true;
                     }
                 }
                 // Destroy our Vulkan app
                 Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                    bf_window.destroying = true;
+                    app.bf_window_data.destroying = true;
                     elwt.exit();
                     unsafe { app.device.device_wait_idle().unwrap(); }
-                    unsafe { app.destroy(); }
+                    unsafe { app.destroy(&bf_window); }
                 }
                 _ => {}
             }
@@ -172,20 +174,22 @@ impl App {
     }
 
     /// Creates our Vulkan app.
-    pub unsafe fn create(window: &Window) -> Result<Self> {
+    pub unsafe fn create(bf_window: &BfWindow) -> Result<Self> {
+        let mut bf_window_data = BfWindowData::default();
+        let mut data = AppData::default();
+
         let loader = LibloadingLoader::new(LIBRARY)?;
         let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
-        let mut data = AppData::default();
-        let instance = create_instance(window, &entry, &mut data)?;
-        data.surface = vk_window::create_surface(&instance, &window, &window)?;
-        pick_physical_device(&instance, &mut data)?;
-        let device = create_logical_device(&entry, &instance, &mut data)?;
-        create_swapchain(window, &instance, &device, &mut data)?;
+        let instance = create_instance(&bf_window.window, &entry, &mut data)?;
+        let surface = bf_window_data.create_window_surface(&instance, &bf_window.window)?;
+        pick_physical_device(&instance, &mut data, &bf_window_data)?;
+        let device = create_logical_device(&entry, &instance, &mut data, &bf_window_data)?;
+        create_swapchain(&bf_window, &bf_window_data, &instance, &device, &mut data)?;
         create_swapchain_image_views(&device, &mut data)?;
         create_render_pass(&instance, &device, &mut data)?;
         create_descriptor_set_layout(&device, &mut data)?;
         create_pipeline(&device, &mut data)?;
-        create_command_pools(&instance, &device, &mut data)?;
+        create_command_pools(&instance, &device, &mut data, &bf_window_data)?;
         create_color_objects(&instance, &device, &mut data)?;
         create_depth_objects(&instance, &device, &mut data)?;
         create_framebuffers(&device, &mut data)?;
@@ -204,6 +208,7 @@ impl App {
             entry,
             instance,
             data,
+            bf_window_data,
             device,
             frame: 0,
             resized: false,
@@ -230,7 +235,7 @@ impl App {
     }
 
     /// Renders a frame for our Vulkan app.
-    pub unsafe fn render(&mut self, window: &Window) -> Result<()> {
+    pub unsafe fn render(&mut self, bf_window: &BfWindow) -> Result<()> {
         let in_flight_fence = self.data.in_flight_fences[self.frame];
 
         self.device.wait_for_fences(&[in_flight_fence], true, u64::MAX)?;
@@ -244,7 +249,7 @@ impl App {
 
         let image_index = match result { 
             Ok((image_index, _)) => image_index as usize,
-            Err(vk::ErrorCode::OUT_OF_DATE_KHR) => return self.recreate_swapchain(window),
+            Err(vk::ErrorCode::OUT_OF_DATE_KHR) => return self.recreate_swapchain(&bf_window),
             Err(e) => return Err(anyhow!(e)),
         };
 
@@ -284,7 +289,7 @@ impl App {
         let changed = result == Ok(vk::SuccessCode::SUBOPTIMAL_KHR) || result == Err(vk::ErrorCode::OUT_OF_DATE_KHR);
         if self.resized || changed {
             self.resized = false;
-            self.recreate_swapchain(window)?;
+            self.recreate_swapchain(&bf_window)?;
         } else if let Err(e) = result {
             return Err(anyhow!(e));
         }
@@ -508,11 +513,11 @@ impl App {
     }
 
     #[rustfmt::skip]
-    unsafe fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
+    unsafe fn recreate_swapchain(&mut self, bf_window: &BfWindow) -> Result<()> {
         self.device.device_wait_idle()?;
         self.destroy_swapchain();
 
-        create_swapchain(window, &self.instance, &self.device, &mut self.data)?;
+        create_swapchain(&bf_window, &self.bf_window_data, &self.instance, &self.device, &mut self.data)?;
         create_swapchain_image_views(&self.device, &mut self.data)?;
         create_render_pass(&self.instance, &self.device, &mut self.data)?;
         create_pipeline(&self.device, &mut self.data)?;
@@ -530,7 +535,7 @@ impl App {
 
     /// Destroys our Vulkan app.
     #[rustfmt::skip]
-    pub unsafe fn destroy(&mut self) {
+    pub unsafe fn destroy(&mut self, bf_window: &BfWindow) {
         self.device.device_wait_idle().unwrap();
 
         self.destroy_swapchain();
@@ -550,7 +555,9 @@ impl App {
         self.device.destroy_command_pool(self.data.command_pool, None);
         self.device.destroy_descriptor_set_layout(self.data.descriptor_set_layout, None);
         self.device.destroy_device(None);
-        self.instance.destroy_surface_khr(self.data.surface, None);
+
+        // Destroy surface
+        bf_window.destroy(&self.instance, &self.bf_window_data).unwrap();
 
         if VALIDATION_ENABLED {
             self.instance.destroy_debug_utils_messenger_ext(self.data.messenger, None);
@@ -750,13 +757,13 @@ extern "system" fn debug_callback(
 #[error("Missing {0}.")]
 pub struct SuitabilityError(pub &'static str);
 
-unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) -> Result<()> {
+unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData, bf_window_data: &BfWindowData) -> Result<()> {
     for physical_device in instance.enumerate_physical_devices()? {
         let properties = instance.get_physical_device_properties(physical_device);
 
         info!("Max push constants is {}.", properties.limits.max_push_constants_size);
 
-        if let Err(error) = check_physical_device(instance, data, physical_device) {
+        if let Err(error) = check_physical_device(instance, data, physical_device, &bf_window_data) {
             warn!("Skipping physical device (`{}`): {}", properties.device_name, error);
         } else {
             info!("Selected physical device (`{}`).", properties.device_name);
@@ -773,11 +780,12 @@ unsafe fn check_physical_device(
     instance: &Instance,
     data: &AppData,
     physical_device: vk::PhysicalDevice,
+    bf_window_data: &BfWindowData,
 ) -> Result<()> {
-    QueueFamilyIndices::get(instance, data, physical_device)?;
+    QueueFamilyIndices::get(instance, data, physical_device, &bf_window_data)?;
     check_physical_device_extensions(instance, physical_device)?;
 
-    let support = SwapchainSupport::get(instance, data, physical_device)?;
+    let support = SwapchainSupport::get(instance, data, physical_device, &bf_window_data)?;
     if support.formats.is_empty() || support.present_modes.is_empty() {
         return Err(anyhow!(SuitabilityError("Insufficient swapchain support.")));
     }
@@ -835,8 +843,9 @@ unsafe fn create_logical_device(
     entry: &Entry,
     instance: &Instance,
     data: &mut AppData,
+    bf_window_data: &BfWindowData,
 ) -> Result<Device> {
-    let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
+    let indices = QueueFamilyIndices::get(instance, data, data.physical_device, &bf_window_data)?;
 
     let mut unique_indices = HashSet::new();
     unique_indices.insert(indices.graphics);
@@ -891,17 +900,18 @@ unsafe fn create_logical_device(
 //============================
 
 unsafe fn create_swapchain(
-    window: &Window,
+    bf_window: &BfWindow,
+    bf_window_data: &BfWindowData,
     instance: &Instance,
     device: &Device,
     data: &mut AppData,
 ) -> Result<()> {
-    let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
-    let support = SwapchainSupport::get(instance, data, data.physical_device)?;
+    let indices = QueueFamilyIndices::get(instance, data, data.physical_device, &bf_window_data)?;
+    let support = SwapchainSupport::get(instance, data, data.physical_device, &bf_window_data)?;
 
     let surface_format = get_swapchain_surface_format(&support.formats);
     let present_mode = get_swapchain_present_mode(&support.present_modes);
-    let extent = get_swapchain_extent(window, support.capabilities);
+    let extent = get_swapchain_extent(&bf_window.window, support.capabilities);
 
     let mut image_count = support.capabilities.min_image_count + 1;
     if support.capabilities.max_image_count != 0
@@ -920,7 +930,7 @@ unsafe fn create_swapchain(
     };
 
     let info = vk::SwapchainCreateInfoKHR::builder()
-        .surface(data.surface)
+        .surface(bf_window_data.surface)
         .min_image_count(image_count)
         .image_format(surface_format.format)
         .image_color_space(surface_format.color_space)
@@ -1280,12 +1290,13 @@ unsafe fn create_command_pools(
     instance: &Instance,
     device: &Device,
     data: &mut AppData,
+    bf_window_data: &BfWindowData,
 ) -> Result<()> {
-    data.command_pool = create_command_pool(instance, device, data)?;
+    data.command_pool = create_command_pool(instance, device, data, bf_window_data)?;
 
     let num_images = data.swapchain_images.len();
     for _ in 0..num_images {
-        let command_pool = create_command_pool(instance, device, data)?;
+        let command_pool = create_command_pool(instance, device, data, bf_window_data)?;
         data.command_pools.push(command_pool);
     }
 
@@ -1296,8 +1307,9 @@ unsafe fn create_command_pool(
     instance: &Instance,
     device: &Device,
     data: &mut AppData,
+    bf_window_data: &BfWindowData,
 ) -> Result<vk::CommandPool> {
-    let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
+    let indices = QueueFamilyIndices::get(instance, data, data.physical_device, &bf_window_data)?;
 
     let info = vk::CommandPoolCreateInfo::builder()
         .flags(vk::CommandPoolCreateFlags::TRANSIENT)
@@ -2264,6 +2276,7 @@ impl QueueFamilyIndices {
         instance: &Instance,
         data: &AppData,
         physical_device: vk::PhysicalDevice,
+        bf_window_data: &BfWindowData,
     ) -> Result<Self> {
         let properties = instance
             .get_physical_device_queue_family_properties(physical_device);
@@ -2278,7 +2291,7 @@ impl QueueFamilyIndices {
             if instance.get_physical_device_surface_support_khr(
                 physical_device,
                 index as u32,
-                data.surface,
+                bf_window_data.surface,
             )? {
                 present = Some(index as u32);
                 break;
@@ -2305,17 +2318,18 @@ impl SwapchainSupport {
         instance: &Instance,
         data: &AppData,
         physical_device: vk::PhysicalDevice,
+        bf_window_data: &BfWindowData,
     ) -> Result<Self> {
         Ok(Self {
             capabilities: instance
                 .get_physical_device_surface_capabilities_khr(
-                    physical_device, data.surface)?,
+                    physical_device, bf_window_data.surface)?,
             formats: instance
                 .get_physical_device_surface_formats_khr(
-                    physical_device, data.surface)?,
+                    physical_device, bf_window_data.surface)?,
             present_modes: instance
                 .get_physical_device_surface_present_modes_khr(
-                    physical_device, data.surface)?,
+                    physical_device, bf_window_data.surface)?,
         })
     }
 }

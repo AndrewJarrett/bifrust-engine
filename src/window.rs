@@ -4,28 +4,26 @@
 
 use winit::{
     dpi::LogicalSize,
-    event_loop::EventLoop,
+    event_loop::{EventLoop},
     window::{Window, WindowBuilder}
 };
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::window as vk_window;
-use std::error::Error;
+use vulkanalia::vk::KhrSurfaceExtension;
+use anyhow::Result;
 //use anyhow::anyhow;
 //use std::io::{Result, Error};
 
 #[derive(Debug)]
 pub struct BfWindow {
     pub window: Window,
-    pub event_loop: EventLoop<()>,
-    pub surface: Option<vk::SurfaceKHR>,
-    pub destroying: bool,
-    pub minimized: bool,
+    //pub event_loop: EventLoop<()>,
 }
 
 impl BfWindow {
 
-    pub fn new(width: u16, height: u16, title: String) -> Result<Self, Box<dyn Error>> {
-        let event_loop = EventLoop::new().unwrap();
+    pub fn new(width: u16, height: u16, title: String, event_loop: &EventLoop<()>) -> Result<Self> {
+        //let event_loop = EventLoop::new().unwrap();
         let window = WindowBuilder::new()
             .with_title(title)
             .with_inner_size(LogicalSize::new(width, height))
@@ -59,28 +57,33 @@ impl BfWindow {
 
         Ok(Self {
             window,
-            event_loop,
-            surface: None,
-            destroying: false,
-            minimized: false,
         })
     }
 
-    pub fn create_window_surface(
-        &mut self, 
-        instance: &Instance
-    ) -> Result<Option<vk::SurfaceKHR>, Box<dyn Error>> {
-        let surface = Some(
-            unsafe {
-                vk_window::create_surface(&instance, &self.window, &self.window)?
-            }
-        );
+    pub fn destroy(&self, instance: &Instance, bf_window_data: &BfWindowData) -> Result<()> {
+        unsafe { instance.destroy_surface_khr(bf_window_data.surface, None); };
 
-        if self.surface.is_none() {
-            self.surface = surface;
-        }
-
-        Ok(surface)
+        Ok(())
     }
 
 }
+
+#[derive(Clone, Debug, Default)]
+pub struct BfWindowData {
+    pub surface: vk::SurfaceKHR,
+    pub destroying: bool,
+    pub minimized: bool,
+}
+
+impl BfWindowData {
+    pub fn create_window_surface(&mut self, instance: &Instance, window: &Window) -> Result<vk::SurfaceKHR> {
+        let surface = unsafe {
+            vk_window::create_surface(&instance, &window, &window)?
+        };
+
+        self.surface = surface;
+
+        Ok(surface)
+    }
+}
+
