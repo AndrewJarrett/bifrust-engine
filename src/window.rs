@@ -60,6 +60,14 @@ impl BfWindow {
         })
     }
 
+    pub fn create_surface(&self, instance: &Instance) -> Result<vk::SurfaceKHR> {
+        let surface = unsafe {
+            vk_window::create_surface(&instance, &self.window, &self.window)?
+        };
+
+        Ok(surface)
+    }
+
     pub fn destroy(&self, instance: &Instance, bf_window_data: &BfWindowData) -> Result<()> {
         unsafe { instance.destroy_surface_khr(bf_window_data.surface, None); };
 

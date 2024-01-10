@@ -1,14 +1,12 @@
 #![allow(
     dead_code,
     unused_variables,
-    unused_imports,
     clippy::manual_slice_size_calculation,
     clippy::too_many_arguments,
     clippy::unnecessary_wraps
 )]
 
-use crate::window::BfWindow;
-use crate::window::BfWindowData;
+use crate::window::{BfWindow, BfWindowData};
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::CStr;
@@ -602,7 +600,7 @@ pub struct AppData {
     swapchain_format: vk::Format,
     swapchain_extent: vk::Extent2D,
     swapchain: vk::SwapchainKHR,
-    swapchain_images: Vec<vk::Image>,
+    pub swapchain_images: Vec<vk::Image>,
     swapchain_image_views: Vec<vk::ImageView>,
     // Pipeline
     render_pass: vk::RenderPass,
@@ -2336,18 +2334,18 @@ impl SwapchainSupport {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
-struct Vertex {
+pub struct Vertex {
     pos: Vec3,
     color: Vec3,
     tex_coord: Vec2,
 }
 
 impl Vertex {
-    const fn new(pos: Vec3, color: Vec3, tex_coord: Vec2) -> Self {
+    pub const fn new(pos: Vec3, color: Vec3, tex_coord: Vec2) -> Self {
         Self { pos, color, tex_coord }
     }
 
-    fn binding_description() -> vk::VertexInputBindingDescription {
+    pub fn binding_description() -> vk::VertexInputBindingDescription {
         vk::VertexInputBindingDescription::builder()
             .binding(0)
             .stride(size_of::<Vertex>() as u32)
@@ -2355,7 +2353,7 @@ impl Vertex {
             .build()
     }
 
-    fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
+    pub fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
         let pos = vk::VertexInputAttributeDescription::builder()
             .binding(0)
             .location(0)
