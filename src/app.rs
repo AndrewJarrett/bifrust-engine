@@ -7,6 +7,8 @@
 )]
 
 use crate::window::{BfWindow, BfWindowData};
+use crate::device::BfDevice;
+use crate::pipeline::{Pipeline, PipelineConfigInfo};
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::CStr;
@@ -25,7 +27,6 @@ use cgmath::{vec2, vec3, point3, Deg};
 use log::*;
 use thiserror::Error;
 use vulkanalia::bytecode::Bytecode;
-use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::window as vk_window;
 use vulkanalia::Version;
@@ -64,7 +65,7 @@ type Pt3  = cgmath::Point3<f32>;
 /// Our Vulkan app.
 #[derive(Clone, Debug)]
 pub struct App {
-    entry: Entry,
+    bf_device: BfDevice,
     pub instance: Instance,
     pub data: AppData,
     pub bf_window_data: BfWindowData,
@@ -176,34 +177,35 @@ impl App {
         let mut bf_window_data = BfWindowData::default();
         let mut data = AppData::default();
 
-        let loader = LibloadingLoader::new(LIBRARY)?;
-        let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
-        let instance = create_instance(&bf_window.window, &entry, &mut data)?;
-        let surface = bf_window_data.create_window_surface(&instance, &bf_window.window)?;
-        pick_physical_device(&instance, &mut data, &bf_window_data)?;
-        let device = create_logical_device(&entry, &instance, &mut data, &bf_window_data)?;
-        create_swapchain(&bf_window, &bf_window_data, &instance, &device, &mut data)?;
-        create_swapchain_image_views(&device, &mut data)?;
-        create_render_pass(&instance, &device, &mut data)?;
-        create_descriptor_set_layout(&device, &mut data)?;
-        create_pipeline(&device, &mut data)?;
-        create_command_pools(&instance, &device, &mut data, &bf_window_data)?;
-        create_color_objects(&instance, &device, &mut data)?;
-        create_depth_objects(&instance, &device, &mut data)?;
-        create_framebuffers(&device, &mut data)?;
-        create_texture_image(&instance, &device, &mut data)?;
-        create_texture_image_view(&device, &mut data)?;
-        create_texture_sampler(&device, &mut data)?;
+        let (bf_device, instance, device) = BfDevice::new(&bf_window)?;
+
+        create_swapchain(&bf_window, &bf_device, &mut data)?;
+        create_swapchain_image_views(&bf_device.device, &mut data)?;
+        create_render_pass(&bf_device.instance, &bf_device.device, &mut data)?;
+        create_descriptor_set_layout(&bf_device.device, &mut data)?;
+
+        let pipeline_config_info = PipelineConfigInfo::new(&bf_device, bf_window.width, bf_window.height)?;
+
+        let pipeline = Pipeline::new(&bf_device, pipeline_config_info);
+
+        //create_pipeline(&device, &mut data)?;
+        //create_command_pools(&instance, &device, &mut data, &bf_device.surface)?;
+        create_color_objects(&bf_device.instance, &bf_device.device, &mut data)?;
+        create_depth_objects(&bf_device.instance, &bf_device.device, &mut data)?;
+        create_framebuffers(&bf_device.device, &mut data)?;
+        create_texture_image(&bf_device.instance, &bf_device.device, &mut data)?;
+        create_texture_image_view(&bf_device.device, &mut data)?;
+        create_texture_sampler(&bf_device.device, &mut data)?;
         load_model(&mut data)?;
-        create_vertex_buffer(&instance, &device, &mut data)?;
-        create_index_buffer(&instance, &device, &mut data)?;
-        create_uniform_buffers(&instance, &device, &mut data)?;
-        create_descriptor_pool(&device, &mut data)?;
-        create_descriptor_sets(&device, &mut data)?;
-        create_command_buffers(&device, &mut data)?;
-        create_sync_objects(&device, &mut data)?;
+        create_vertex_buffer(&bf_device.instance, &bf_device.device, &mut data)?;
+        create_index_buffer(&bf_device.instance, &bf_device.device, &mut data)?;
+        create_uniform_buffers(&bf_device.instance, &bf_device.device, &mut data)?;
+        create_descriptor_pool(&bf_device.device, &mut data)?;
+        create_descriptor_sets(&bf_device.device, &mut data)?;
+        create_command_buffers(&bf_device.device, &mut data)?;
+        create_sync_objects(&bf_device.device, &mut data)?;
         Ok(Self { 
-            entry,
+            bf_device,
             instance,
             data,
             bf_window_data,
@@ -515,7 +517,7 @@ impl App {
         self.device.device_wait_idle()?;
         self.destroy_swapchain();
 
-        create_swapchain(&bf_window, &self.bf_window_data, &self.instance, &self.device, &mut self.data)?;
+        create_swapchain(&bf_window, &self.bf_device, &mut self.data)?;
         create_swapchain_image_views(&self.device, &mut self.data)?;
         create_render_pass(&self.instance, &self.device, &mut self.data)?;
         create_pipeline(&self.device, &mut self.data)?;
@@ -755,13 +757,13 @@ extern "system" fn debug_callback(
 #[error("Missing {0}.")]
 pub struct SuitabilityError(pub &'static str);
 
-unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData, bf_window_data: &BfWindowData) -> Result<()> {
+unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData, surface: vk::SurfaceKHR) -> Result<()> {
     for physical_device in instance.enumerate_physical_devices()? {
         let properties = instance.get_physical_device_properties(physical_device);
 
         info!("Max push constants is {}.", properties.limits.max_push_constants_size);
 
-        if let Err(error) = check_physical_device(instance, data, physical_device, &bf_window_data) {
+        if let Err(error) = check_physical_device(instance, physical_device, surface) {
             warn!("Skipping physical device (`{}`): {}", properties.device_name, error);
         } else {
             info!("Selected physical device (`{}`).", properties.device_name);
@@ -776,14 +778,13 @@ unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData, bf_windo
 
 unsafe fn check_physical_device(
     instance: &Instance,
-    data: &AppData,
     physical_device: vk::PhysicalDevice,
-    bf_window_data: &BfWindowData,
+    surface: vk::SurfaceKHR,
 ) -> Result<()> {
-    QueueFamilyIndices::get(instance, data, physical_device, &bf_window_data)?;
+    QueueFamilyIndices::get(instance, physical_device, surface)?;
     check_physical_device_extensions(instance, physical_device)?;
 
-    let support = SwapchainSupport::get(instance, data, physical_device, &bf_window_data)?;
+    let support = SwapchainSupport::get(instance, physical_device, surface)?;
     if support.formats.is_empty() || support.present_modes.is_empty() {
         return Err(anyhow!(SuitabilityError("Insufficient swapchain support.")));
     }
@@ -841,9 +842,9 @@ unsafe fn create_logical_device(
     entry: &Entry,
     instance: &Instance,
     data: &mut AppData,
-    bf_window_data: &BfWindowData,
+    surface: vk::SurfaceKHR,
 ) -> Result<Device> {
-    let indices = QueueFamilyIndices::get(instance, data, data.physical_device, &bf_window_data)?;
+    let indices = QueueFamilyIndices::get(instance, data.physical_device, surface)?;
 
     let mut unique_indices = HashSet::new();
     unique_indices.insert(indices.graphics);
@@ -899,13 +900,11 @@ unsafe fn create_logical_device(
 
 unsafe fn create_swapchain(
     bf_window: &BfWindow,
-    bf_window_data: &BfWindowData,
-    instance: &Instance,
-    device: &Device,
+    bf_device: &BfDevice,
     data: &mut AppData,
 ) -> Result<()> {
-    let indices = QueueFamilyIndices::get(instance, data, data.physical_device, &bf_window_data)?;
-    let support = SwapchainSupport::get(instance, data, data.physical_device, &bf_window_data)?;
+    let indices = QueueFamilyIndices::get(&bf_device.instance, bf_device.physical_device, bf_device.surface)?;
+    let support = SwapchainSupport::get(&bf_device.instance, bf_device.physical_device, bf_device.surface)?;
 
     let surface_format = get_swapchain_surface_format(&support.formats);
     let present_mode = get_swapchain_present_mode(&support.present_modes);
@@ -928,7 +927,7 @@ unsafe fn create_swapchain(
     };
 
     let info = vk::SwapchainCreateInfoKHR::builder()
-        .surface(bf_window_data.surface)
+        .surface(bf_device.surface)
         .min_image_count(image_count)
         .image_format(surface_format.format)
         .image_color_space(surface_format.color_space)
@@ -945,8 +944,8 @@ unsafe fn create_swapchain(
 
     data.swapchain_format = surface_format.format;
     data.swapchain_extent = extent;
-    data.swapchain = device.create_swapchain_khr(&info, None)?;
-    data.swapchain_images = device.get_swapchain_images_khr(data.swapchain)?;
+    data.swapchain = bf_device.device.create_swapchain_khr(&info, None)?;
+    data.swapchain_images = bf_device.device.get_swapchain_images_khr(data.swapchain)?;
 
     Ok(())
 }
@@ -1288,13 +1287,13 @@ unsafe fn create_command_pools(
     instance: &Instance,
     device: &Device,
     data: &mut AppData,
-    bf_window_data: &BfWindowData,
+    surface: vk::SurfaceKHR,
 ) -> Result<()> {
-    data.command_pool = create_command_pool(instance, device, data, bf_window_data)?;
+    data.command_pool = create_command_pool(instance, device, data, surface)?;
 
     let num_images = data.swapchain_images.len();
     for _ in 0..num_images {
-        let command_pool = create_command_pool(instance, device, data, bf_window_data)?;
+        let command_pool = create_command_pool(instance, device, data, surface)?;
         data.command_pools.push(command_pool);
     }
 
@@ -1305,9 +1304,9 @@ unsafe fn create_command_pool(
     instance: &Instance,
     device: &Device,
     data: &mut AppData,
-    bf_window_data: &BfWindowData,
+    surface: vk::SurfaceKHR,
 ) -> Result<vk::CommandPool> {
-    let indices = QueueFamilyIndices::get(instance, data, data.physical_device, &bf_window_data)?;
+    let indices = QueueFamilyIndices::get(instance, data.physical_device, surface)?;
 
     let info = vk::CommandPoolCreateInfo::builder()
         .flags(vk::CommandPoolCreateFlags::TRANSIENT)
@@ -2272,9 +2271,8 @@ struct QueueFamilyIndices {
 impl QueueFamilyIndices {
     unsafe fn get(
         instance: &Instance,
-        data: &AppData,
         physical_device: vk::PhysicalDevice,
-        bf_window_data: &BfWindowData,
+        surface: vk::SurfaceKHR,
     ) -> Result<Self> {
         let properties = instance
             .get_physical_device_queue_family_properties(physical_device);
@@ -2289,7 +2287,7 @@ impl QueueFamilyIndices {
             if instance.get_physical_device_surface_support_khr(
                 physical_device,
                 index as u32,
-                bf_window_data.surface,
+                surface,
             )? {
                 present = Some(index as u32);
                 break;
@@ -2314,20 +2312,16 @@ struct SwapchainSupport {
 impl SwapchainSupport {
     unsafe fn get(
         instance: &Instance,
-        data: &AppData,
         physical_device: vk::PhysicalDevice,
-        bf_window_data: &BfWindowData,
+        surface: vk::SurfaceKHR,
     ) -> Result<Self> {
         Ok(Self {
             capabilities: instance
-                .get_physical_device_surface_capabilities_khr(
-                    physical_device, bf_window_data.surface)?,
+                .get_physical_device_surface_capabilities_khr(physical_device, surface)?,
             formats: instance
-                .get_physical_device_surface_formats_khr(
-                    physical_device, bf_window_data.surface)?,
+                .get_physical_device_surface_formats_khr(physical_device, surface)?,
             present_modes: instance
-                .get_physical_device_surface_present_modes_khr(
-                    physical_device, bf_window_data.surface)?,
+                .get_physical_device_surface_present_modes_khr(physical_device, surface)?,
         })
     }
 }

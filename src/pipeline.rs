@@ -14,32 +14,30 @@ use vulkanalia::bytecode::Bytecode;
 
 #[derive(Debug)]
 pub struct Pipeline {
-    bf_device: BfDevice,
     vert: Vec<u8>,
     frag: Vec<u8>,
     config_info: PipelineConfigInfo,
-    graphics_pipeline: vk::Pipeline,
+    pipeline: vk::Pipeline,
     vert_shader_module: vk::ShaderModule,
     frag_shader_module: vk::ShaderModule,
 }
 
 impl Pipeline {
 
-    pub unsafe fn new(bf_device: BfDevice, config_info: PipelineConfigInfo) -> Result<Self> {
+    pub unsafe fn new(bf_device: &BfDevice, config_info: PipelineConfigInfo) -> Result<Self> {
         let vert = include_bytes!("../shaders/vert.spv").to_vec();
         let frag = include_bytes!("../shaders/frag.spv").to_vec();
 
         let vert_shader_module = Self::create_shader_module(&bf_device, &vert[..])?;
         let frag_shader_module = Self::create_shader_module(&bf_device, &frag[..])?;
 
-        let graphics_pipeline = Self::create_graphics_pipeline(&bf_device, vert_shader_module, frag_shader_module, &config_info)?;
+        let pipeline = Self::create_graphics_pipeline(&bf_device, vert_shader_module, frag_shader_module, &config_info)?;
 
         Ok(Self {
-            bf_device,
             vert,
             frag,
             config_info,
-            graphics_pipeline,
+            pipeline,
             vert_shader_module,
             frag_shader_module,
         })
@@ -82,13 +80,13 @@ impl Pipeline {
             //.render_pass(config_info.render_pass)
             .subpass(config_info.subpass);
 
-        let graphics_pipeline = bf_device.device.create_graphics_pipelines(
+        let pipeline = bf_device.device.create_graphics_pipelines(
             vk::PipelineCache::null(), &[info], None)?.0[0];
 
         bf_device.device.destroy_shader_module(vert_shader_module, None);
         bf_device.device.destroy_shader_module(frag_shader_module, None);
 
-        Ok(graphics_pipeline)
+        Ok(pipeline)
     }
 
     unsafe fn create_shader_module(bf_device: &BfDevice, bytecode: &[u8]) -> Result<vk::ShaderModule> {
@@ -101,10 +99,8 @@ impl Pipeline {
         Ok(bf_device.device.create_shader_module(&info, None)?)
     }
 
-    pub unsafe fn destroy(&self) -> Result<()> {
-        self.bf_device.device.destroy_shader_module(self.vert_shader_module, None);
-        self.bf_device.device.destroy_shader_module(self.frag_shader_module, None);
-        self.bf_device.device.destroy_pipeline(self.graphics_pipeline, None);
+    pub unsafe fn destroy(&self, bf_device: &BfDevice) -> Result<()> {
+        bf_device.device.destroy_pipeline(self.pipeline, None);
 
         Ok(())
     }
@@ -128,7 +124,7 @@ pub struct PipelineConfigInfo {
 
 impl PipelineConfigInfo {
 
-    pub unsafe fn new(bf_device: BfDevice, width: u32, height: u32) -> Result<PipelineConfigInfo> {
+    pub unsafe fn new(bf_device: &BfDevice, width: u32, height: u32) -> Result<PipelineConfigInfo> {
         let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo::builder()
             .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
             .primitive_restart_enable(false);

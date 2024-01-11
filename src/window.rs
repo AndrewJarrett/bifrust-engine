@@ -17,12 +17,14 @@ use anyhow::Result;
 #[derive(Debug)]
 pub struct BfWindow {
     pub window: Window,
+    pub width: u32,
+    pub height: u32,
     //pub event_loop: EventLoop<()>,
 }
 
 impl BfWindow {
 
-    pub fn new(width: u16, height: u16, title: String, event_loop: &EventLoop<()>) -> Result<Self> {
+    pub fn new(width: u32, height: u32, title: String, event_loop: &EventLoop<()>) -> Result<Self> {
         //let event_loop = EventLoop::new().unwrap();
         let window = WindowBuilder::new()
             .with_title(title)
@@ -57,6 +59,8 @@ impl BfWindow {
 
         Ok(Self {
             window,
+            width,
+            height,
         })
     }
 

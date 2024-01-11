@@ -26,7 +26,7 @@ const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[vk::KHR_SWAPCHAIN_EXTENSION.na
 
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BfDevice {
     pub command_pool: vk::CommandPool,
     pub command_pools: Vec<vk::CommandPool>,
@@ -36,14 +36,14 @@ pub struct BfDevice {
     pub present_queue: vk::Queue,
     pub properties: vk::PhysicalDeviceProperties,
     pub msaa_samples: vk::SampleCountFlags,
-    instance: Instance,
+    pub instance: Instance,
+    pub physical_device: vk::PhysicalDevice,
     messenger: Option<vk::DebugUtilsMessengerEXT>,
-    physical_device: vk::PhysicalDevice,
 }
 
 impl BfDevice {
 
-    pub unsafe fn new(bf_window: &BfWindow) -> Result<Self> {
+    pub unsafe fn new(bf_window: &BfWindow) -> Result<(Self, Instance, Device)> {
         let entry = Self::create_entry()?;
         let (instance, messenger) = Self::create_instance(&bf_window, &entry)?;
 
@@ -66,19 +66,25 @@ impl BfDevice {
             2
         )?;
         
-        Ok(Self {
-            command_pool,
-            command_pools,
-            device,
-            surface,
-            graphics_queue,
-            present_queue,
-            properties,
-            msaa_samples,
-            instance,
-            messenger,
-            physical_device,
-        })
+        Ok(
+            (
+                Self {
+                    command_pool,
+                    command_pools,
+                    device: device.clone(),
+                    surface,
+                    graphics_queue,
+                    present_queue,
+                    properties,
+                    msaa_samples,
+                    instance: instance.clone(),
+                    physical_device,
+                    messenger,
+                },
+                instance,
+                device
+            )
+        )
     }
 
     unsafe fn create_entry() -> Result<Entry> {
