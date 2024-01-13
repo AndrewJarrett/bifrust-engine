@@ -27,12 +27,18 @@ impl Swapchain {
         bf_window: &BfWindow,
         bf_device: &BfDevice,
     ) -> Result<Self> {
+        println!("Swapchain new()");
         let indices = QueueFamilyIndices::get(&bf_device.instance, bf_device.physical_device, bf_device.surface)?;
+        println!("QFI after");
         let support = SwapchainSupport::get(&bf_device.instance, bf_device.physical_device, bf_device.surface)?;
+        println!("Swapchainsupport after");
 
         let surface_format = Self::get_swapchain_surface_format(&support.formats);
+        println!("get surf format");
         let present_mode = Self::get_swapchain_present_mode(&support.present_modes);
+        println!("get present mode");
         let extent = Self::get_swapchain_extent(&bf_window, support.capabilities);
+        println!("get extent");
 
         let mut image_count = support.capabilities.min_image_count + 1;
         if support.capabilities.max_image_count != 0
@@ -65,14 +71,19 @@ impl Swapchain {
             .present_mode(present_mode)
             .clipped(true)
             .old_swapchain(vk::SwapchainKHR::null());
+        println!("swapchain info khr");
 
         let format = surface_format.format;
         let swapchain = bf_device.device.create_swapchain_khr(&info, None)?;
+        println!("create swapchain");
         let images = bf_device.device.get_swapchain_images_khr(swapchain)?;
+        println!("get swap images");
 
         let image_views = Self::create_swapchain_image_views(&bf_device, &images, format)?;
+        println!("get image views");
 
         let render_pass = Self::create_render_pass(&bf_device, format)?;
+        println!("render pass");
 
         let (depth_image, depth_image_memory, depth_image_view) = Self::create_depth_objects(
             &bf_device,

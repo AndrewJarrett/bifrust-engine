@@ -178,14 +178,17 @@ impl App {
         let bf_window_data = BfWindowData::default();
         let mut data = AppData::default();
 
+        println!("Made it here 1!");
         let (bf_device, instance, device) = BfDevice::new(&bf_window)?;
 
+        println!("Made it here 2!");
         let swapchain = Swapchain::new(&bf_window, &bf_device)?;
         
 
         //create_swapchain(&bf_window, &bf_device, &mut data);
         //create_swapchain_image_views(&bf_device.device, &mut data)?;
         //create_render_pass(&bf_device.instance, &bf_device.device, &mut data)?;
+        println!("Made it here 3!");
         create_descriptor_set_layout(&bf_device.device, &mut data)?;
 
         let pipeline_config_info = PipelineConfigInfo::new(&bf_device, bf_window.width, bf_window.height)?;
