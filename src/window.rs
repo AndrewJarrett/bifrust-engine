@@ -72,6 +72,13 @@ impl BfWindow {
         Ok(surface)
     }
 
+    /*
+    pub unsafe fn get_extent(&self) -> Result<vk::Extent2D> {
+
+        Ok(())
+    }
+    */
+
     pub fn destroy(&self, instance: &Instance, bf_window_data: &BfWindowData) -> Result<()> {
         unsafe { instance.destroy_surface_khr(bf_window_data.surface, None); };
 

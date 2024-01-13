@@ -9,6 +9,7 @@
 use crate::window::{BfWindow, BfWindowData};
 use crate::device::BfDevice;
 use crate::pipeline::{Pipeline, PipelineConfigInfo};
+use crate::swapchain::{Swapchain};
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::CStr;
@@ -174,14 +175,17 @@ impl App {
 
     /// Creates our Vulkan app.
     pub unsafe fn create(bf_window: &BfWindow) -> Result<Self> {
-        let mut bf_window_data = BfWindowData::default();
+        let bf_window_data = BfWindowData::default();
         let mut data = AppData::default();
 
         let (bf_device, instance, device) = BfDevice::new(&bf_window)?;
 
-        create_swapchain(&bf_window, &bf_device, &mut data)?;
-        create_swapchain_image_views(&bf_device.device, &mut data)?;
-        create_render_pass(&bf_device.instance, &bf_device.device, &mut data)?;
+        let swapchain = Swapchain::new(&bf_window, &bf_device)?;
+        
+
+        //create_swapchain(&bf_window, &bf_device, &mut data);
+        //create_swapchain_image_views(&bf_device.device, &mut data)?;
+        //create_render_pass(&bf_device.instance, &bf_device.device, &mut data)?;
         create_descriptor_set_layout(&bf_device.device, &mut data)?;
 
         let pipeline_config_info = PipelineConfigInfo::new(&bf_device, bf_window.width, bf_window.height)?;
@@ -191,8 +195,8 @@ impl App {
         //create_pipeline(&device, &mut data)?;
         //create_command_pools(&instance, &device, &mut data, &bf_device.surface)?;
         create_color_objects(&bf_device.instance, &bf_device.device, &mut data)?;
-        create_depth_objects(&bf_device.instance, &bf_device.device, &mut data)?;
-        create_framebuffers(&bf_device.device, &mut data)?;
+        //create_depth_objects(&bf_device.instance, &bf_device.device, &mut data)?;
+        //create_framebuffers(&bf_device.device, &mut data)?;
         create_texture_image(&bf_device.instance, &bf_device.device, &mut data)?;
         create_texture_image_view(&bf_device.device, &mut data)?;
         create_texture_sampler(&bf_device.device, &mut data)?;
@@ -203,7 +207,7 @@ impl App {
         create_descriptor_pool(&bf_device.device, &mut data)?;
         create_descriptor_sets(&bf_device.device, &mut data)?;
         create_command_buffers(&bf_device.device, &mut data)?;
-        create_sync_objects(&bf_device.device, &mut data)?;
+        //create_sync_objects(&bf_device.device, &mut data)?;
         Ok(Self { 
             bf_device,
             instance,
@@ -2274,8 +2278,11 @@ impl QueueFamilyIndices {
         physical_device: vk::PhysicalDevice,
         surface: vk::SurfaceKHR,
     ) -> Result<Self> {
+        println!("Made it here.");
+        dbg!(instance, physical_device);
         let properties = instance
             .get_physical_device_queue_family_properties(physical_device);
+        println!("But not here.");
 
         let graphics = properties
             .iter()

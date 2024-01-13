@@ -65,7 +65,7 @@ impl BfDevice {
             &device,
             2
         )?;
-        
+
         Ok(
             (
                 Self {
@@ -524,9 +524,9 @@ impl BfDevice {
 
 #[derive(Clone, Debug)]
 pub struct SwapchainSupport {
-    capabilities: vk::SurfaceCapabilitiesKHR,
-    formats: Vec<vk::SurfaceFormatKHR>,
-    present_modes: Vec<vk::PresentModeKHR>,
+    pub capabilities: vk::SurfaceCapabilitiesKHR,
+    pub formats: Vec<vk::SurfaceFormatKHR>,
+    pub present_modes: Vec<vk::PresentModeKHR>,
 }
 
 impl SwapchainSupport {
@@ -545,8 +545,8 @@ impl SwapchainSupport {
 
 #[derive(Copy, Clone, Debug)]
 pub struct QueueFamilyIndices {
-    graphics: u32,
-    present: u32,
+    pub graphics: u32,
+    pub present: u32,
 }
 
 impl QueueFamilyIndices {
