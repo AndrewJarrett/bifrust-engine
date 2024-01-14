@@ -5,6 +5,7 @@
 
 use crate::device::BfDevice;
 use crate::app::Vertex;
+use crate::swapchain::Swapchain;
 
 use anyhow::Result;
 //use log::*;
@@ -17,14 +18,17 @@ pub struct Pipeline {
     vert: Vec<u8>,
     frag: Vec<u8>,
     config_info: PipelineConfigInfo,
-    pipeline: vk::Pipeline,
+    pub pipeline: vk::Pipeline,
     vert_shader_module: vk::ShaderModule,
     frag_shader_module: vk::ShaderModule,
 }
 
 impl Pipeline {
 
-    pub unsafe fn new(bf_device: &BfDevice, config_info: PipelineConfigInfo) -> Result<Self> {
+    pub unsafe fn new(
+        bf_device: &BfDevice,
+        config_info: PipelineConfigInfo
+    ) -> Result<Self> {
         let vert = include_bytes!("../shaders/vert.spv").to_vec();
         let frag = include_bytes!("../shaders/frag.spv").to_vec();
 
@@ -77,7 +81,7 @@ impl Pipeline {
             .depth_stencil_state(&config_info.depth_stencil_state)
             .color_blend_state(&config_info.color_blend_state)
             .layout(config_info.pipeline_layout)
-            //.render_pass(config_info.render_pass)
+            .render_pass(config_info.render_pass)
             .subpass(config_info.subpass);
 
         let pipeline = bf_device.device.create_graphics_pipelines(
@@ -118,13 +122,18 @@ pub struct PipelineConfigInfo {
     color_blend_state: vk::PipelineColorBlendStateCreateInfo,
     depth_stencil_state: vk::PipelineDepthStencilStateCreateInfo,
     pipeline_layout: vk::PipelineLayout,
-    //render_pass: vk::RenderPass,
+    render_pass: vk::RenderPass,
     subpass: u32,
 }
 
 impl PipelineConfigInfo {
 
-    pub unsafe fn new(bf_device: &BfDevice, width: u32, height: u32) -> Result<PipelineConfigInfo> {
+    pub unsafe fn new(
+        bf_device: &BfDevice,
+        swapchain: &Swapchain,
+        width: u32,
+        height: u32
+    ) -> Result<PipelineConfigInfo> {
         let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo::builder()
             .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
             .primitive_restart_enable(false);
@@ -186,23 +195,7 @@ impl PipelineConfigInfo {
         let dynamic_state = vk::PipelineDynamicStateCreateInfo::builder()
             .dynamic_states(dynamic_states);
 
-        let vert_push_constant_range = vk::PushConstantRange::builder()
-            .stage_flags(vk::ShaderStageFlags::VERTEX)
-            .offset(0)
-            .size(64);
-
-        let frag_push_constant_range = vk::PushConstantRange::builder()
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-            .offset(64)
-            .size(4);
-
-        //let set_layouts = &[data.descriptor_set_layout];
-        let push_constant_ranges = &[vert_push_constant_range, frag_push_constant_range];
-        let layout_info = vk::PipelineLayoutCreateInfo::builder()
-            //.set_layouts(set_layouts)
-            .push_constant_ranges(push_constant_ranges);
-
-        let pipeline_layout = bf_device.device.create_pipeline_layout(&layout_info, None)?;
+        let pipeline_layout = Self::create_pipeline_layout(&bf_device)?;
 
         let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo::builder()
             .depth_test_enable(true)
@@ -212,6 +205,8 @@ impl PipelineConfigInfo {
             .min_depth_bounds(0.0)
             .max_depth_bounds(1.0)
             .stencil_test_enable(false);
+
+        let render_pass = swapchain.render_pass;
 
         Ok(Self {
             viewport: viewport.build(),
@@ -224,8 +219,50 @@ impl PipelineConfigInfo {
             color_blend_state: color_blend_state.build(),
             depth_stencil_state: depth_stencil_state.build(),
             pipeline_layout,
-            //render_pass,
+            render_pass,
             subpass: 0,
         })
+    }
+
+    unsafe fn create_pipeline_layout(bf_device: &BfDevice) -> Result<vk::PipelineLayout> {
+        let vert_push_constant_range = vk::PushConstantRange::builder()
+            .stage_flags(vk::ShaderStageFlags::VERTEX)
+            .offset(0)
+            .size(64);
+
+        let frag_push_constant_range = vk::PushConstantRange::builder()
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .offset(64)
+            .size(4);
+
+        let descriptor_set_layout = Self::create_descriptor_set_layout(&bf_device)?;
+
+        let set_layouts = &[descriptor_set_layout];
+        let push_constant_ranges = &[vert_push_constant_range, frag_push_constant_range];
+        let layout_info = vk::PipelineLayoutCreateInfo::builder()
+            .set_layouts(set_layouts)
+            .push_constant_ranges(push_constant_ranges);
+
+        Ok(bf_device.device.create_pipeline_layout(&layout_info, None)?)
+    }
+
+
+    unsafe fn create_descriptor_set_layout(bf_device: &BfDevice) -> Result<vk::DescriptorSetLayout> {
+        let ubo_binding = vk::DescriptorSetLayoutBinding::builder()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX);
+
+        let sampler_binding = vk::DescriptorSetLayoutBinding::builder()
+            .binding(1)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT);
+
+        let bindings = &[ubo_binding, sampler_binding];
+        let info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(bindings);
+
+        Ok(bf_device.device.create_descriptor_set_layout(&info, None)?)
     }
 }

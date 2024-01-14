@@ -3,6 +3,7 @@
 )]
 
 use crate::window::BfWindow;
+use crate::swapchain::Swapchain;
 
 use std::collections::HashSet;
 use std::ffi::CStr;
@@ -38,12 +39,14 @@ pub struct BfDevice {
     pub msaa_samples: vk::SampleCountFlags,
     pub instance: Instance,
     pub physical_device: vk::PhysicalDevice,
+    command_buffers: Vec<vk::CommandBuffer>,
+    secondary_command_buffers: Vec<Vec<vk::CommandBuffer>>,
     messenger: Option<vk::DebugUtilsMessengerEXT>,
 }
 
 impl BfDevice {
 
-    pub unsafe fn new(bf_window: &BfWindow) -> Result<(Self, Instance, Device)> {
+    pub unsafe fn new(bf_window: &BfWindow) -> Result<Self> {
         let entry = Self::create_entry()?;
         let (instance, messenger) = Self::create_instance(&bf_window, &entry)?;
 
@@ -66,25 +69,24 @@ impl BfDevice {
             2
         )?;
 
-        Ok(
-            (
-                Self {
-                    command_pool,
-                    command_pools,
-                    device: device.clone(),
-                    surface,
-                    graphics_queue,
-                    present_queue,
-                    properties,
-                    msaa_samples,
-                    instance: instance.clone(),
-                    physical_device,
-                    messenger,
-                },
-                instance,
-                device
-            )
-        )
+        let command_buffers: Vec<vk::CommandBuffer> = Vec::new();
+        let secondary_command_buffers: Vec<Vec<vk::CommandBuffer>> = Vec::new();
+
+        Ok(Self {
+            command_pool,
+            command_pools,
+            device,
+            surface,
+            graphics_queue,
+            present_queue,
+            properties,
+            msaa_samples,
+            instance,
+            physical_device,
+            command_buffers,
+            secondary_command_buffers,
+            messenger,
+        })
     }
 
     unsafe fn create_entry() -> Result<Entry> {
@@ -336,7 +338,27 @@ impl BfDevice {
         Ok(device.create_command_pool(&info, None)?)
     }
 
-    unsafe fn create_buffer(
+    pub unsafe fn create_command_buffers(
+        &mut self,
+        swapchain: &Swapchain,
+    ) -> Result<()> {
+        let num_images = swapchain.images.len();
+        for image_index in 0..num_images {
+            let allocate_info = vk::CommandBufferAllocateInfo::builder()
+                .command_pool(self.command_pools[image_index])
+                .level(vk::CommandBufferLevel::PRIMARY)
+                .command_buffer_count(1);
+
+            let command_buffer = self.device.allocate_command_buffers(&allocate_info)?[0];
+            self.command_buffers.push(command_buffer);
+        }
+
+        self.secondary_command_buffers = vec![vec![]; swapchain.images.len()];
+
+        Ok(())
+    }
+
+    pub unsafe fn create_buffer(
         &self,
         size: vk::DeviceSize,
         usage: vk::BufferUsageFlags,
