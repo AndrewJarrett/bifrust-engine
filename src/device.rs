@@ -41,7 +41,7 @@ pub struct BfDevice {
     pub physical_device: vk::PhysicalDevice,
     command_buffers: Vec<vk::CommandBuffer>,
     secondary_command_buffers: Vec<Vec<vk::CommandBuffer>>,
-    messenger: Option<vk::DebugUtilsMessengerEXT>,
+    pub messenger: Option<vk::DebugUtilsMessengerEXT>,
 }
 
 impl BfDevice {
