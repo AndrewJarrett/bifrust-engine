@@ -39,8 +39,8 @@ pub struct BfDevice {
     pub msaa_samples: vk::SampleCountFlags,
     pub instance: Instance,
     pub physical_device: vk::PhysicalDevice,
-    command_buffers: Vec<vk::CommandBuffer>,
-    secondary_command_buffers: Vec<Vec<vk::CommandBuffer>>,
+    pub command_buffers: Vec<vk::CommandBuffer>,
+    pub secondary_command_buffers: Vec<Vec<vk::CommandBuffer>>,
     pub messenger: Option<vk::DebugUtilsMessengerEXT>,
 }
 
@@ -51,20 +51,20 @@ impl BfDevice {
         let (instance, messenger) = Self::create_instance(&bf_window, &entry)?;
 
         let surface = Self::create_surface(&bf_window, &instance)?;
-        let (properties, physical_device) = Self::pick_physical_device(&instance, surface)?;
+        let (properties, physical_device) = Self::pick_physical_device(&instance, &surface)?;
         let msaa_samples = Self::get_max_msaa_samples(properties);
 
         let (device, graphics_queue, present_queue) = Self::create_logical_device(
             &entry,
             &instance,
-            physical_device,
-            surface
+            &physical_device,
+            &surface
         )?;
 
         let (command_pool, command_pools) = Self::create_command_pools(
             &instance,
-            physical_device,
-            surface,
+            &physical_device,
+            &surface,
             &device,
             2
         )?;
@@ -176,13 +176,13 @@ impl BfDevice {
         Ok(surface)
     }
 
-    unsafe fn pick_physical_device(instance: &Instance, surface: vk::SurfaceKHR) -> Result<(vk::PhysicalDeviceProperties, vk::PhysicalDevice)> {
+    unsafe fn pick_physical_device(instance: &Instance, surface: &vk::SurfaceKHR) -> Result<(vk::PhysicalDeviceProperties, vk::PhysicalDevice)> {
         for physical_device in instance.enumerate_physical_devices()? {
             let properties = instance.get_physical_device_properties(physical_device);
 
             info!("Max push constants is {}.", properties.limits.max_push_constants_size);
 
-            if let Err(error) = Self::check_physical_device(&instance, physical_device, surface) {
+            if let Err(error) = Self::check_physical_device(&instance, &physical_device, &surface) {
                 warn!("Skipping physical device (`{}`): {}", properties.device_name, error);
             } else {
                 info!("Selected physical device (`{}`).", properties.device_name);
@@ -195,18 +195,18 @@ impl BfDevice {
 
     unsafe fn check_physical_device(
         instance: &Instance,
-        physical_device: vk::PhysicalDevice,
-        surface: vk::SurfaceKHR
+        physical_device: &vk::PhysicalDevice,
+        surface: &vk::SurfaceKHR
     ) -> Result<()> {
-        QueueFamilyIndices::get(&instance, physical_device, surface)?;
-        Self::check_physical_device_extensions(&instance, physical_device)?;
+        QueueFamilyIndices::get(&instance, &physical_device, &surface)?;
+        Self::check_physical_device_extensions(&instance, &physical_device)?;
 
-        let support = SwapchainSupport::get(&instance, physical_device, surface)?;
+        let support = SwapchainSupport::get(&instance, &physical_device, &surface)?;
         if support.formats.is_empty() || support.present_modes.is_empty() {
             return Err(anyhow!(SuitabilityError("Insufficient swapchain support.")));
         }
 
-        let features = instance.get_physical_device_features(physical_device);
+        let features = instance.get_physical_device_features(*physical_device);
         if features.sampler_anisotropy != vk::TRUE {
             return Err(anyhow!(SuitabilityError("No sampler anisotropy.")));
         }
@@ -216,10 +216,10 @@ impl BfDevice {
 
     unsafe fn check_physical_device_extensions(
         instance: &Instance,
-        physical_device: vk::PhysicalDevice
+        physical_device: &vk::PhysicalDevice
     ) -> Result<()> {
         let extensions = instance
-            .enumerate_device_extension_properties(physical_device, None)?
+            .enumerate_device_extension_properties(*physical_device, None)?
             .iter()
             .map(|e| e.extension_name)
             .collect::<HashSet<_>>();
@@ -252,10 +252,10 @@ impl BfDevice {
     unsafe fn create_logical_device(
         entry: &Entry,
         instance: &Instance,
-        physical_device: vk::PhysicalDevice,
-        surface: vk::SurfaceKHR,
+        physical_device: &vk::PhysicalDevice,
+        surface: &vk::SurfaceKHR,
     ) -> Result<(Device, vk::Queue, vk::Queue)> {
-        let indices = QueueFamilyIndices::get(&instance, physical_device, surface)?;
+        let indices = QueueFamilyIndices::get(&instance, &physical_device, &surface)?;
 
         let mut unique_indices = HashSet::new();
         unique_indices.insert(indices.graphics);
@@ -297,7 +297,7 @@ impl BfDevice {
             .enabled_extension_names(&extensions)
             .enabled_features(&features);
 
-        let device = instance.create_device(physical_device, &info, None)?;
+        let device = instance.create_device(*physical_device, &info, None)?;
 
         let graphics_queue = device.get_device_queue(indices.graphics, 0);
         let present_queue = device.get_device_queue(indices.present, 0);
@@ -307,16 +307,16 @@ impl BfDevice {
 
     unsafe fn create_command_pools(
         instance: &Instance,
-        physical_device: vk::PhysicalDevice,
-        surface: vk::SurfaceKHR,
+        physical_device: &vk::PhysicalDevice,
+        surface: &vk::SurfaceKHR,
         device: &Device,
         num_images: usize,
     ) -> Result<(vk::CommandPool, Vec<vk::CommandPool>)> {
-        let command_pool = Self::create_command_pool(&instance, physical_device, surface, &device)?;
+        let command_pool = Self::create_command_pool(&instance, &physical_device, &surface, &device)?;
         let mut command_pools: Vec<vk::CommandPool> = Vec::new();
 
         for _ in 0..num_images {
-            let command_pool = Self::create_command_pool(instance, physical_device, surface, &device)?;
+            let command_pool = Self::create_command_pool(&instance, &physical_device, &surface, &device)?;
             command_pools.push(command_pool);
         }
 
@@ -325,11 +325,11 @@ impl BfDevice {
 
     unsafe fn create_command_pool(
         instance: &Instance,
-        physical_device: vk::PhysicalDevice,
-        surface: vk::SurfaceKHR,
+        physical_device: &vk::PhysicalDevice,
+        surface: &vk::SurfaceKHR,
         device: &Device,
     ) -> Result<vk::CommandPool> {
-        let indices = QueueFamilyIndices::get(&instance, physical_device, surface)?;
+        let indices = QueueFamilyIndices::get(&instance, &physical_device, &surface)?;
 
         let info = vk::CommandPoolCreateInfo::builder()
             .flags(vk::CommandPoolCreateFlags::TRANSIENT)
@@ -338,19 +338,22 @@ impl BfDevice {
         Ok(device.create_command_pool(&info, None)?)
     }
 
-    pub unsafe fn create_command_buffers(
+    pub fn create_command_buffers(
         &mut self,
         swapchain: &Swapchain,
     ) -> Result<()> {
         let num_images = swapchain.images.len();
-        for image_index in 0..num_images {
-            let allocate_info = vk::CommandBufferAllocateInfo::builder()
-                .command_pool(self.command_pools[image_index])
-                .level(vk::CommandBufferLevel::PRIMARY)
-                .command_buffer_count(1);
 
-            let command_buffer = self.device.allocate_command_buffers(&allocate_info)?[0];
-            self.command_buffers.push(command_buffer);
+        unsafe {
+            for image_index in 0..num_images {
+                let allocate_info = vk::CommandBufferAllocateInfo::builder()
+                    .command_pool(self.command_pools[image_index])
+                    .level(vk::CommandBufferLevel::PRIMARY)
+                    .command_buffer_count(1);
+
+                let command_buffer = self.device.allocate_command_buffers(&allocate_info)?[0];
+                self.command_buffers.push(command_buffer);
+            }
         }
 
         self.secondary_command_buffers = vec![vec![]; swapchain.images.len()];
@@ -554,13 +557,13 @@ pub struct SwapchainSupport {
 impl SwapchainSupport {
     pub unsafe fn get(
         instance: &Instance,
-        physical_device: vk::PhysicalDevice,
-        surface: vk::SurfaceKHR,
+        physical_device: &vk::PhysicalDevice,
+        surface: &vk::SurfaceKHR,
     ) -> Result<Self> {
         Ok(Self {
-            capabilities: instance.get_physical_device_surface_capabilities_khr(physical_device, surface)?,
-            formats: instance.get_physical_device_surface_formats_khr(physical_device, surface)?,
-            present_modes: instance.get_physical_device_surface_present_modes_khr(physical_device, surface)?,
+            capabilities: instance.get_physical_device_surface_capabilities_khr(*physical_device, *surface)?,
+            formats: instance.get_physical_device_surface_formats_khr(*physical_device, *surface)?,
+            present_modes: instance.get_physical_device_surface_present_modes_khr(*physical_device, *surface)?,
         })
     }
 }
@@ -574,28 +577,32 @@ pub struct QueueFamilyIndices {
 impl QueueFamilyIndices {
     pub unsafe fn get(
         instance: &Instance,
-        physical_device: vk::PhysicalDevice,
-        surface: vk::SurfaceKHR,
+        physical_device: &vk::PhysicalDevice,
+        surface: &vk::SurfaceKHR,
     ) -> Result<Self> {
+        println!("QFI 1");
         let properties = instance
-            .get_physical_device_queue_family_properties(physical_device);
+            .get_physical_device_queue_family_properties(*physical_device);
+        println!("QFI 2");
 
         let graphics = properties
             .iter()
             .position(|p| p.queue_flags.contains(vk::QueueFlags::GRAPHICS))
             .map(|i| i as u32);
+        println!("QFI 3");
 
         let mut present = None;
         for (index, _properties) in properties.iter().enumerate() {
             if instance.get_physical_device_surface_support_khr(
-                physical_device,
+                *physical_device,
                 index as u32,
-                surface,
+                *surface,
             )? {
                 present = Some(index as u32);
                 break;
             }
         }
+        println!("QFI 4");
 
         if let (Some(graphics), Some(present)) = (graphics, present) {
             Ok(Self { graphics, present })

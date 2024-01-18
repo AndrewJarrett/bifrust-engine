@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::KhrSwapchainExtension;
 
-const MAX_FRAMES_IN_FLIGHT: usize = 2;
+pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 pub struct Swapchain {
     pub swapchain: vk::SwapchainKHR,
@@ -19,6 +19,7 @@ pub struct Swapchain {
     pub depth_image_view: vk::ImageView,
     pub framebuffers: Vec<vk::Framebuffer>,
     pub sync: Sync,
+    pub frame: usize,
 }
 
 impl Swapchain {
@@ -28,9 +29,9 @@ impl Swapchain {
         bf_device: &BfDevice,
     ) -> Result<Self> {
         println!("Swapchain new()");
-        let indices = QueueFamilyIndices::get(&bf_device.instance, bf_device.physical_device, bf_device.surface)?;
+        let indices = QueueFamilyIndices::get(&bf_device.instance, &bf_device.physical_device, &bf_device.surface)?;
         println!("QFI after");
-        let support = SwapchainSupport::get(&bf_device.instance, bf_device.physical_device, bf_device.surface)?;
+        let support = SwapchainSupport::get(&bf_device.instance, &bf_device.physical_device, &bf_device.surface)?;
         println!("Swapchainsupport after");
 
         let surface_format = Self::get_swapchain_surface_format(&support.formats);
@@ -106,6 +107,7 @@ impl Swapchain {
             depth_image_view,
             framebuffers,
             sync,
+            frame: 0,
         })
     }
 
@@ -151,6 +153,73 @@ impl Swapchain {
                 ))
                 .build()
         }
+    }
+
+    pub fn get_extent_aspect_ratio(&self) -> Result<f32> {
+        Ok(self.extent.width as f32 / self.extent.height as f32)
+    }
+
+    pub fn acquire_next_image(&self, bf_device: &BfDevice) -> Result<VkSuccessResult<u32>> {
+        let in_flight_fence = self.sync.in_flight_fences[self.frame];
+
+        let result: VkSuccessResult<u32>;
+        unsafe {
+            bf_device.device.wait_for_fences(&[in_flight_fence], true, u64::MAX)?;
+
+            result = bf_device.device.acquire_next_image_khr(
+                self.swapchain,
+                u64::MAX,
+                self.sync.image_available_semaphores[self.frame],
+                vk::Fence::null(),
+            );
+        }
+
+        Ok(result)
+    }
+
+    pub unsafe fn submit_command_buffers(
+        &mut self,
+        bf_device: &BfDevice,
+        image_index: usize
+    ) -> Result<VkResult<vk::SuccessCode>> {
+        let image_in_flight = self.sync.images_in_flight[image_index];
+        if !image_in_flight.is_null() {
+            bf_device.device.wait_for_fences(&[image_in_flight], true, u64::MAX)?;
+        }
+
+        self.sync.images_in_flight[image_index] = image_in_flight;
+
+        //self.update_command_buffer(image_index)?;
+        //self.update_uniform_buffer(image_index)?;
+
+        let wait_semaphores = &[self.sync.image_available_semaphores[self.frame]];
+        let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+        let command_buffers = &[bf_device.command_buffers[image_index]];
+        let signal_semaphores = &[self.sync.render_finished_semaphores[self.frame]];
+        let submit_info = vk::SubmitInfo::builder()
+            .wait_semaphores(wait_semaphores)
+            .wait_dst_stage_mask(wait_stages)
+            .command_buffers(command_buffers)
+            .signal_semaphores(signal_semaphores);
+
+        let in_flight_fence = self.sync.in_flight_fences[self.frame];
+        bf_device.device.reset_fences(&[in_flight_fence])?;
+
+        bf_device.device
+            .queue_submit(bf_device.graphics_queue, &[submit_info], in_flight_fence)?;
+
+        let swapchains = &[self.swapchain];
+        let image_indices = &[image_index as u32];
+        let present_info = vk::PresentInfoKHR::builder()
+            .wait_semaphores(signal_semaphores)
+            .swapchains(swapchains)
+            .image_indices(image_indices);
+
+        let result = bf_device.device.queue_present_khr(bf_device.present_queue, &present_info);
+
+        self.frame = (self.frame + 1) % MAX_FRAMES_IN_FLIGHT;
+
+        Ok(result)
     }
 
     unsafe fn create_swapchain_image_views(
@@ -309,7 +378,6 @@ impl Swapchain {
             vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT,
         )
     }
-
 
     unsafe fn get_supported_format(
         bf_device: &BfDevice,

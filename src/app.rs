@@ -6,8 +6,11 @@
 
 use crate::window::{BfWindow, BfWindowData};
 use crate::device::BfDevice;
-use crate::pipeline::{Pipeline, PipelineConfigInfo};
 use crate::swapchain::{Swapchain};
+use crate::game_object::GameObject;
+use crate::model::{Model, ModelBuilder};
+use crate::renderer::Renderer;
+use crate::simple_render_system::SimpleRenderSystem;
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -53,6 +56,7 @@ type Pt3  = cgmath::Point3<f32>;
 pub struct App {
     bf_device: BfDevice,
     //pub instance: Instance,
+    pub srs: SimpleRenderSystem,
     pub data: AppData,
     pub bf_window_data: BfWindowData,
     //pub device: Device,
@@ -163,6 +167,7 @@ impl App {
         let bf_window_data = BfWindowData::default();
         let mut data = AppData::default();
 
+
         let (indices, _vertices) = Self::load_model()?;
         data.indices = indices;
 
@@ -170,19 +175,16 @@ impl App {
         let mut bf_device = BfDevice::new(&bf_window)?;
 
         println!("Made it here 2!");
-        let swapchain = Swapchain::new(&bf_window, &bf_device)?;
+        //let swapchain = Swapchain::new(&bf_window, &bf_device)?;
+
+        let renderer = Renderer::new(&bf_window, &mut bf_device)?;
+
+        let srs = SimpleRenderSystem::new(&bf_device, &renderer.swapchain)?;
 
         //create_swapchain(&bf_window, &bf_device, &mut data);
         //create_swapchain_image_views(&bf_device.device, &mut data)?;
         //create_render_pass(&bf_device.instance, &bf_device.device, &mut data)?;
         //create_descriptor_set_layout(&bf_device.device, &mut data)?;
-
-        println!("Made it here 3!");
-        let pipeline_config_info = PipelineConfigInfo::new(&bf_device, &swapchain, bf_window.width, bf_window.height)?;
-
-        let pipeline = Pipeline::new(&bf_device, pipeline_config_info)?;
-        data.pipeline = pipeline.pipeline;
-
         //create_pipeline(&device, &mut data)?;
         //create_command_pools(&instance, &device, &mut data, &bf_device.surface)?;
         create_color_objects(&bf_device.instance, &bf_device.device, &mut data)?;
@@ -197,12 +199,13 @@ impl App {
         create_descriptor_pool(&bf_device.device, &mut data)?;
         create_descriptor_sets(&bf_device.device, &mut data)?;
 
-        bf_device.create_command_buffers(&swapchain)?;
+        bf_device.create_command_buffers(&renderer.swapchain)?;
 
         //create_command_buffers(&bf_device.device, &mut data)?;
         //create_sync_objects(&bf_device.device, &mut data)?;
         Ok(Self { 
             bf_device,
+            srs,
             data,
             bf_window_data,
             frame: 0,
@@ -227,6 +230,17 @@ impl App {
             .unwrap();
 
         results.len() as u32
+    }
+
+    fn load_game_objects(bf_device: &BfDevice) -> Result<Vec<GameObject>> {
+        let model_builder = ModelBuilder::new()?;
+        let model = Model::new(&bf_device, model_builder)?;
+
+        let mut game_objects: Vec<GameObject> = Vec::new();
+        let game_object = GameObject::new(model)?;
+        game_objects.push(game_object);
+
+        Ok(game_objects)
     }
 
     fn load_model() -> Result<(Vec<u32>, Vec<Vertex>)> {
@@ -561,14 +575,15 @@ impl App {
 
         let mut swapchain = Swapchain::new(&bf_window, &self.bf_device)?;
 
+        let renderer = Renderer::new(&bf_window, &mut self.bf_device)?;
+
+        let srs = SimpleRenderSystem::new(&self.bf_device, &renderer.swapchain)?;
+
         //create_swapchain(&bf_window, &self.bf_device, &mut self.data)?;
         //create_swapchain_image_views(&self.bf_device.device, &mut self.data)?;
         //create_render_pass(&self.bf_device.instance, &self.bf_device.device, &mut self.data)?;
         //create_pipeline(&self.bf_device.device, &mut self.data)?;
-        let pipeline_config_info = PipelineConfigInfo::new(&self.bf_device, &swapchain, bf_window.width, bf_window.height)?;
-
-        let pipeline = Pipeline::new(&self.bf_device, pipeline_config_info)?;
-        self.data.pipeline = pipeline.pipeline;
+        self.data.pipeline = srs.pipeline;
         create_color_objects(&self.bf_device.instance, &self.bf_device.device, &mut self.data)?;
         //create_depth_objects(&self.bf_device.instance, &self.bf_device.device, &mut self.data)?;
         //create_framebuffers(&self.bf_device.device, &mut self.data)?;
@@ -651,16 +666,16 @@ pub struct AppData {
     // Pipeline
     render_pass: vk::RenderPass,
     descriptor_set_layout: vk::DescriptorSetLayout,
-    pipeline_layout: vk::PipelineLayout,
-    pipeline: vk::Pipeline,
+    pub pipeline_layout: vk::PipelineLayout,
+    pub pipeline: vk::Pipeline,
     // Framebuffers
     framebuffers: Vec<vk::Framebuffer>,
     // Command Pool
     command_pool: vk::CommandPool,
     // Color
-    color_image: vk::Image,
-    color_image_memory: vk::DeviceMemory,
-    color_image_view: vk::ImageView,
+    pub color_image: vk::Image,
+    pub color_image_memory: vk::DeviceMemory,
+    pub color_image_view: vk::ImageView,
     // Depth
     depth_image: vk::Image,
     depth_image_memory: vk::DeviceMemory,
@@ -672,17 +687,17 @@ pub struct AppData {
     texture_image_view: vk::ImageView,
     texture_sampler: vk::Sampler,
     // Model
-    indices: Vec<u32>,
+    pub indices: Vec<u32>,
     // Buffers
-    vertex_buffer: vk::Buffer,
+    pub vertex_buffer: vk::Buffer,
     vertex_buffer_memory: vk::DeviceMemory,
-    index_buffer: vk::Buffer,
+    pub index_buffer: vk::Buffer,
     index_buffer_memory: vk::DeviceMemory,
-    uniform_buffers: Vec<vk::Buffer>,
-    uniform_buffers_memory: Vec<vk::DeviceMemory>,
+    pub uniform_buffers: Vec<vk::Buffer>,
+    pub uniform_buffers_memory: Vec<vk::DeviceMemory>,
     // Descriptors
-    descriptor_pool: vk::DescriptorPool,
-    descriptor_sets: Vec<vk::DescriptorSet>,
+    pub descriptor_pool: vk::DescriptorPool,
+    pub descriptor_sets: Vec<vk::DescriptorSet>,
     // Command Buffers
     command_pools: Vec<vk::CommandPool>,
     command_buffers: Vec<vk::CommandBuffer>,

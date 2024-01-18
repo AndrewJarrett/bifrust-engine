@@ -131,9 +131,11 @@ impl PipelineConfigInfo {
     pub unsafe fn new(
         bf_device: &BfDevice,
         swapchain: &Swapchain,
-        width: u32,
-        height: u32
+        pipeline_layout: vk::PipelineLayout,
     ) -> Result<PipelineConfigInfo> {
+        let width = swapchain.extent.width;
+        let height = swapchain.extent.height;
+
         let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo::builder()
             .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
             .primitive_restart_enable(false);
@@ -195,8 +197,6 @@ impl PipelineConfigInfo {
         let dynamic_state = vk::PipelineDynamicStateCreateInfo::builder()
             .dynamic_states(dynamic_states);
 
-        let pipeline_layout = Self::create_pipeline_layout(&bf_device)?;
-
         let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo::builder()
             .depth_test_enable(true)
             .depth_write_enable(true)
@@ -205,8 +205,6 @@ impl PipelineConfigInfo {
             .min_depth_bounds(0.0)
             .max_depth_bounds(1.0)
             .stencil_test_enable(false);
-
-        let render_pass = swapchain.render_pass;
 
         Ok(Self {
             viewport: viewport.build(),
@@ -219,7 +217,7 @@ impl PipelineConfigInfo {
             color_blend_state: color_blend_state.build(),
             depth_stencil_state: depth_stencil_state.build(),
             pipeline_layout,
-            render_pass,
+            render_pass: swapchain.render_pass,
             subpass: 0,
         })
     }
