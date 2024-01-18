@@ -6,9 +6,9 @@
 
 use crate::window::{BfWindow, BfWindowData};
 use crate::device::BfDevice;
-use crate::swapchain::{Swapchain};
+use crate::swapchain::Swapchain;
 use crate::game_object::GameObject;
-use crate::model::{Model, ModelBuilder};
+use crate::model::Model;
 use crate::renderer::Renderer;
 use crate::simple_render_system::SimpleRenderSystem;
 
@@ -52,7 +52,7 @@ type Mat4 = cgmath::Matrix4<f32>;
 type Pt3  = cgmath::Point3<f32>;
 
 /// Our Vulkan app.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct App {
     bf_device: BfDevice,
     //pub instance: Instance,
@@ -233,8 +233,7 @@ impl App {
     }
 
     fn load_game_objects(bf_device: &BfDevice) -> Result<Vec<GameObject>> {
-        let model_builder = ModelBuilder::new()?;
-        let model = Model::new(&bf_device, model_builder)?;
+        let model = Model::new(&bf_device, "resources/viking_room.obj")?;
 
         let mut game_objects: Vec<GameObject> = Vec::new();
         let game_object = GameObject::new(model)?;

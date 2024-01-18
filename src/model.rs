@@ -26,11 +26,13 @@ pub struct Model {
 
 impl Model {
 
-    pub fn new(bf_device: &BfDevice, builder: ModelBuilder) -> Result<Self> {
-        let mut vertex_buffer: vk::Buffer = Default::default();
-        let mut vertex_buffer_memory: vk::DeviceMemory = Default::default();
-        let mut index_buffer: vk::Buffer = Default::default();
-        let mut index_buffer_memory: vk::DeviceMemory = Default::default();
+    pub fn new(bf_device: &BfDevice, filepath: &str) -> Result<Self> {
+        let builder = ModelBuilder::new(&filepath)?;
+
+        let vertex_buffer: vk::Buffer;
+        let vertex_buffer_memory: vk::DeviceMemory;
+        let index_buffer: vk::Buffer;
+        let index_buffer_memory: vk::DeviceMemory;
 
         unsafe {
             (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(&bf_device, &builder.vertices)?;
@@ -162,8 +164,8 @@ pub struct ModelBuilder {
 
 impl ModelBuilder {
     
-    pub fn new() -> Result<Self> {
-        let mut reader = BufReader::new(File::open("resources/viking_room.obj")?);
+    pub fn new(filepath: &str) -> Result<Self> {
+        let mut reader = BufReader::new(File::open(filepath)?);
         //let mut reader = BufReader::new(File::open("resources/orange-3d.obj")?);
         
         let mut indices: Vec<u32> = Vec::new();

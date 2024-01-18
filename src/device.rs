@@ -27,7 +27,7 @@ const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[vk::KHR_SWAPCHAIN_EXTENSION.na
 
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct BfDevice {
     pub command_pool: vk::CommandPool,
     pub command_pools: Vec<vk::CommandPool>,
@@ -47,12 +47,17 @@ pub struct BfDevice {
 impl BfDevice {
 
     pub unsafe fn new(bf_window: &BfWindow) -> Result<Self> {
+        println!("BfDevice new");
         let entry = Self::create_entry()?;
         let (instance, messenger) = Self::create_instance(&bf_window, &entry)?;
+        println!("After create_instance");
 
         let surface = Self::create_surface(&bf_window, &instance)?;
+        println!("After create_surface");
         let (properties, physical_device) = Self::pick_physical_device(&instance, &surface)?;
+        println!("After pick_physical_device");
         let msaa_samples = Self::get_max_msaa_samples(properties);
+        println!("After get_max_msaa_samples");
 
         let (device, graphics_queue, present_queue) = Self::create_logical_device(
             &entry,
@@ -60,6 +65,7 @@ impl BfDevice {
             &physical_device,
             &surface
         )?;
+        println!("After create_logical_device");
 
         let (command_pool, command_pools) = Self::create_command_pools(
             &instance,
@@ -68,6 +74,7 @@ impl BfDevice {
             &device,
             2
         )?;
+        println!("After create_command_pools");
 
         let command_buffers: Vec<vk::CommandBuffer> = Vec::new();
         let secondary_command_buffers: Vec<Vec<vk::CommandBuffer>> = Vec::new();
@@ -171,7 +178,7 @@ impl BfDevice {
     }
 
     fn create_surface(bf_window: &BfWindow, instance: &Instance) -> Result<vk::SurfaceKHR> {
-        let surface = bf_window.create_surface(instance)?;
+        let surface = bf_window.create_surface(&instance)?;
 
         Ok(surface)
     }
@@ -230,7 +237,7 @@ impl BfDevice {
         }
     }
 
-    unsafe fn get_max_msaa_samples(
+    fn get_max_msaa_samples(
         properties: vk::PhysicalDeviceProperties
     ) -> vk::SampleCountFlags {
         let counts = properties.limits.framebuffer_color_sample_counts
