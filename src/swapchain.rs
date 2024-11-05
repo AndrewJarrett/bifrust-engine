@@ -1,5 +1,5 @@
 use crate::window::BfWindow;
-use crate::device::{BfDevice, QueueFamilyIndices, SwapchainSupport};
+use crate::device::BfDevice;
 
 use anyhow::{anyhow, Result};
 use vulkanalia::prelude::v1_0::*;
@@ -29,29 +29,28 @@ impl Swapchain {
         bf_device: &BfDevice,
     ) -> Result<Self> {
         println!("Swapchain new()");
-        let indices = QueueFamilyIndices::get(&bf_device.instance, &bf_device.physical_device, &bf_device.surface)?;
         println!("QFI after");
-        let support = SwapchainSupport::get(&bf_device.instance, &bf_device.physical_device, &bf_device.surface)?;
+        //let support = SwapchainSupport::get(&bf_device.instance, &bf_device.physical_device, &bf_device.surface)?;
         println!("Swapchainsupport after");
 
-        let surface_format = Self::get_swapchain_surface_format(&support.formats);
+        let surface_format = Self::get_swapchain_surface_format(&bf_device.support.formats);
         println!("get surf format");
-        let present_mode = Self::get_swapchain_present_mode(&support.present_modes);
+        let present_mode = Self::get_swapchain_present_mode(&bf_device.support.present_modes);
         println!("get present mode");
-        let extent = Self::get_swapchain_extent(&bf_window, support.capabilities);
+        let extent = Self::get_swapchain_extent(&bf_window, bf_device.support.capabilities);
         println!("get extent");
 
-        let mut image_count = support.capabilities.min_image_count + 1;
-        if support.capabilities.max_image_count != 0
-            && image_count > support.capabilities.max_image_count
+        let mut image_count = bf_device.support.capabilities.min_image_count + 1;
+        if bf_device.support.capabilities.max_image_count != 0
+            && image_count > bf_device.support.capabilities.max_image_count
         {
-            image_count = support.capabilities.max_image_count;
+            image_count = bf_device.support.capabilities.max_image_count;
         }
 
         let mut queue_family_indices = vec![];
-        let image_sharing_mode = if indices.graphics != indices.present {
-            queue_family_indices.push(indices.graphics);
-            queue_family_indices.push(indices.present);
+        let image_sharing_mode = if bf_device.indices.graphics != bf_device.indices.present {
+            queue_family_indices.push(bf_device.indices.graphics);
+            queue_family_indices.push(bf_device.indices.present);
             vk::SharingMode::CONCURRENT
         } else {
             vk::SharingMode::EXCLUSIVE
@@ -67,7 +66,7 @@ impl Swapchain {
             .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
             .image_sharing_mode(image_sharing_mode)
             .queue_family_indices(&queue_family_indices)
-            .pre_transform(support.capabilities.current_transform)
+            .pre_transform(bf_device.support.capabilities.current_transform)
             .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
             .present_mode(present_mode)
             .clipped(true)
