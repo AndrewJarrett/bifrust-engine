@@ -7,15 +7,13 @@
 use crate::window::{BfWindow, BfWindowData};
 use crate::device::BfDevice;
 use crate::swapchain::Swapchain;
-use crate::game_object::GameObject;
+use crate::game_object::{GameObject, TransformComponent};
 use crate::model::Model;
 use crate::renderer::Renderer;
 use crate::simple_render_system::SimpleRenderSystem;
 
-use std::collections::HashMap;
 use std::fs::File;
 use std::hash::{Hash, Hasher};
-use std::io::BufReader;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
 use std::time::Instant;
@@ -23,7 +21,7 @@ use std::ptr::slice_from_raw_parts;
 use std::f64::consts::FRAC_PI_2;
 
 use anyhow::{anyhow, Result};
-use cgmath::{vec2, vec3, point3, Deg};
+use cgmath::{vec3, point3, Deg};
 use log::*;
 use thiserror::Error;
 use vulkanalia::prelude::v1_0::*;
@@ -167,19 +165,20 @@ impl App {
         let bf_window_data = BfWindowData::default();
         let mut data = AppData::default();
 
-
-        let (indices, _vertices) = Self::load_model()?;
-        data.indices = indices;
-
         println!("Made it here 1!");
         let mut bf_device = BfDevice::new(&bf_window)?;
-
         println!("Made it here 2!");
-        //let swapchain = Swapchain::new(&bf_window, &bf_device)?;
 
         let renderer = Renderer::new(&bf_window, &mut bf_device)?;
-
         let srs = SimpleRenderSystem::new(&bf_device, &renderer.swapchain)?;
+        println!("Made it here 3!");
+
+        let game_objects = Self::load_game_objects(&bf_device)?;
+        data.indices = game_objects[0].model.builder.indices.clone();
+
+        println!("Made it here 4!");
+        //let swapchain = Swapchain::new(&bf_window, &bf_device)?;
+
 
         //create_swapchain(&bf_window, &bf_device, &mut data);
         //create_swapchain_image_views(&bf_device.device, &mut data)?;
@@ -233,15 +232,25 @@ impl App {
     }
 
     fn load_game_objects(bf_device: &BfDevice) -> Result<Vec<GameObject>> {
-        let model = Model::new(&bf_device, "resources/viking_room.obj")?;
-
         let mut game_objects: Vec<GameObject> = Vec::new();
-        let game_object = GameObject::new(model)?;
-        game_objects.push(game_object);
+
+        println!("Before transformcomp");
+        let mut transform = TransformComponent::default();
+        transform.translation = vec3::<f32>(-0.5, 0.5, 2.5);
+        transform.scale = vec3::<f32>(3.0, 1.5, 3.0);
+        println!("after transformcomp");
+
+        let model = Model::new(&bf_device, "resources/viking_room.obj")?;
+        println!("after model new");
+        let viking_room = GameObject::new(model, transform)?;
+        println!("after game object new");
+
+        game_objects.push(viking_room);
 
         Ok(game_objects)
     }
 
+    /*
     fn load_model() -> Result<(Vec<u32>, Vec<Vertex>)> {
         let mut reader = BufReader::new(File::open("resources/viking_room.obj")?);
         //let mut reader = BufReader::new(File::open("resources/orange-3d.obj")?);
@@ -288,6 +297,7 @@ impl App {
 
         Ok((indices, vertices))
     }
+    */
 
     /// Renders a frame for our Vulkan app.
     pub unsafe fn render(&mut self, bf_window: &BfWindow) -> Result<()> {

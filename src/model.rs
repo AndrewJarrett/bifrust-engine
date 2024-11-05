@@ -16,6 +16,7 @@ type Vec3 = cgmath::Vector3<f32>;
 //type Mat4 = cgmath::Matrix4<f32>;
 //type Pt3  = cgmath::Point3<f32>;
 
+#[derive(Debug, Default)]
 pub struct Model {
     pub vertex_buffer: vk::Buffer,
     pub vertex_buffer_memory: vk::DeviceMemory,
@@ -27,18 +28,15 @@ pub struct Model {
 impl Model {
 
     pub fn new(bf_device: &BfDevice, filepath: &str) -> Result<Self> {
+        println!("In model new");
         let builder = ModelBuilder::new(&filepath)?;
+        println!("after model builder new");
 
-        let vertex_buffer: vk::Buffer;
-        let vertex_buffer_memory: vk::DeviceMemory;
-        let index_buffer: vk::Buffer;
-        let index_buffer_memory: vk::DeviceMemory;
+        println!("before create vert buf");
+        let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(&bf_device, &builder.vertices)?;
 
-        unsafe {
-            (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(&bf_device, &builder.vertices)?;
-
-            (index_buffer, index_buffer_memory) = Self::create_index_buffer(&bf_device, &builder.indices)?;
-        }
+        println!("before create index buf");
+        let (index_buffer, index_buffer_memory) = Self::create_index_buffer(&bf_device, &builder.indices)?;
 
         Ok(Self {
             vertex_buffer,
@@ -49,114 +47,122 @@ impl Model {
         })
     }
 
-    unsafe fn create_vertex_buffer(
-        bf_device: &BfDevice,
-        vertices: &Vec<Vertex>,
-    ) -> Result<(vk::Buffer, vk::DeviceMemory)> {
+    fn create_vertex_buffer(bf_device: &BfDevice, vertices: &Vec<Vertex>) -> Result<(vk::Buffer, vk::DeviceMemory)> {
+        let vertex_buffer: vk::Buffer;
+        let vertex_buffer_memory: vk::DeviceMemory;
+
         let size = (size_of::<Vertex>() * vertices.len()) as u64;
 
-        let (staging_buffer, staging_buffer_memory) = bf_device.create_buffer(
-            size,
-            vk::BufferUsageFlags::TRANSFER_SRC,
-            vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
-        )?;
+        println!("before create vert buf unsafe");
+        unsafe {
+            let (staging_buffer, staging_buffer_memory) = bf_device.create_buffer(
+                size,
+                vk::BufferUsageFlags::TRANSFER_SRC,
+                vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
+            )?;
+            println!("after create stage buf");
 
-        let memory = bf_device.device.map_memory(
-            staging_buffer_memory,
-            0,
-            size,
-            vk::MemoryMapFlags::empty(),
-        )?;
+            let memory = bf_device.device.map_memory(
+                staging_buffer_memory,
+                0,
+                size,
+                vk::MemoryMapFlags::empty(),
+            )?;
+            println!("after device map memory");
 
-        memcpy(vertices.as_ptr(), memory.cast(), vertices.len());
+            memcpy(vertices.as_ptr(), memory.cast(), vertices.len());
+            println!("after memcpy");
 
-        bf_device.device.unmap_memory(staging_buffer_memory);
+            bf_device.device.unmap_memory(staging_buffer_memory);
+            println!("after unmap memory");
 
-        let (vertex_buffer, vertex_buffer_memory) = bf_device.create_buffer(
-            size,
-            vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-        )?;
+            (vertex_buffer, vertex_buffer_memory) = bf_device.create_buffer(
+                size,
+                vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            )?;
+            println!("after create vert buf call");
 
-        bf_device.copy_buffer(staging_buffer, vertex_buffer, size)?;
+            bf_device.copy_buffer(staging_buffer, vertex_buffer, size)?;
+            println!("after copy buffer");
 
-        bf_device.device.destroy_buffer(staging_buffer, None);
-        bf_device.device.free_memory(staging_buffer_memory, None);
+            bf_device.device.destroy_buffer(staging_buffer, None);
+            bf_device.device.free_memory(staging_buffer_memory, None);
+            println!("after destroy/free");
+        }
 
         Ok((vertex_buffer, vertex_buffer_memory))
     }
 
-    unsafe fn create_index_buffer(
-        bf_device: &BfDevice,
-        indices: &Vec<u32>,
-    ) -> Result<(vk::Buffer, vk::DeviceMemory)> {
+    fn create_index_buffer(bf_device: &BfDevice, indices: &Vec<u32>) -> Result<(vk::Buffer, vk::DeviceMemory)> {
+        let index_buffer: vk::Buffer;
+        let index_buffer_memory: vk::DeviceMemory;
+
         let size = (size_of::<u32>() * indices.len()) as u64;
 
-        let (staging_buffer, staging_buffer_memory) = bf_device.create_buffer(
-            size,
-            vk::BufferUsageFlags::TRANSFER_SRC,
-            vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
-        )?;
+        unsafe {
+            let (staging_buffer, staging_buffer_memory) = bf_device.create_buffer(
+                size,
+                vk::BufferUsageFlags::TRANSFER_SRC,
+                vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
+            )?;
 
-        let memory = bf_device.device.map_memory(
-            staging_buffer_memory,
-            0,
-            size,
-            vk::MemoryMapFlags::empty(),
-        )?;
+            let memory = bf_device.device.map_memory(
+                staging_buffer_memory,
+                0,
+                size,
+                vk::MemoryMapFlags::empty(),
+            )?;
 
-        memcpy(indices.as_ptr(), memory.cast(), indices.len());
+            memcpy(indices.as_ptr(), memory.cast(), indices.len());
 
-        bf_device.device.unmap_memory(staging_buffer_memory);
+            bf_device.device.unmap_memory(staging_buffer_memory);
 
-        let (index_buffer, index_buffer_memory) = bf_device.create_buffer(
-            size,
-            vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-        )?;
+            (index_buffer, index_buffer_memory) = bf_device.create_buffer(
+                size,
+                vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            )?;
 
-        bf_device.copy_buffer(staging_buffer, index_buffer, size)?;
+            bf_device.copy_buffer(staging_buffer, index_buffer, size)?;
 
-        bf_device.device.destroy_buffer(staging_buffer, None);
-        bf_device.device.free_memory(staging_buffer_memory, None);
+            bf_device.device.destroy_buffer(staging_buffer, None);
+            bf_device.device.free_memory(staging_buffer_memory, None);
+        }
 
         Ok((index_buffer, index_buffer_memory))
     }
 
-    pub unsafe fn draw(
-        &self,
-        bf_device: &BfDevice,
-        command_buffer: vk::CommandBuffer
-    ) -> Result<()> {
-        bf_device.device.cmd_draw_indexed(command_buffer, self.builder.indices.len() as u32, 1, 0, 0, 0);
+    pub fn draw(&self, bf_device: &BfDevice, command_buffer: vk::CommandBuffer) -> Result<()> {
+        unsafe {
+            bf_device.device.cmd_draw_indexed(command_buffer, self.builder.indices.len() as u32, 1, 0, 0, 0);
+        }
 
         Ok(())
     }
 
-    pub unsafe fn bind(
-        &self,
-        bf_device: &BfDevice,
-        command_buffer: vk::CommandBuffer
-    ) -> Result<()> {
-        bf_device.device.cmd_bind_vertex_buffers(
-            command_buffer,
-            0,
-            &[self.vertex_buffer],
-            &[0]
-        );
-        bf_device.device.cmd_bind_index_buffer(
-            command_buffer,
-            self.index_buffer,
-            0,
-            vk::IndexType::UINT32
-        );
+    pub fn bind(&self, bf_device: &BfDevice, command_buffer: vk::CommandBuffer) -> Result<()> {
+        unsafe {
+            bf_device.device.cmd_bind_vertex_buffers(
+                command_buffer,
+                0,
+                &[self.vertex_buffer],
+                &[0]
+            );
+            bf_device.device.cmd_bind_index_buffer(
+                command_buffer,
+                self.index_buffer,
+                0,
+                vk::IndexType::UINT32
+            );
+        }
         
         Ok(())
     }
 
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ModelBuilder {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
@@ -165,6 +171,7 @@ pub struct ModelBuilder {
 impl ModelBuilder {
     
     pub fn new(filepath: &str) -> Result<Self> {
+        println!("In model builder new");
         let mut reader = BufReader::new(File::open(filepath)?);
         //let mut reader = BufReader::new(File::open("resources/orange-3d.obj")?);
         

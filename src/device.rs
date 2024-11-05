@@ -8,6 +8,7 @@ use crate::swapchain::Swapchain;
 use std::collections::HashSet;
 use std::ffi::CStr;
 use std::os::raw::c_void;
+//use std::mem::MaybeUninit;
 
 use anyhow::{anyhow, Result};
 use log::*;
@@ -38,6 +39,9 @@ pub struct BfDevice {
     pub properties: vk::PhysicalDeviceProperties,
     pub msaa_samples: vk::SampleCountFlags,
     pub instance: Instance,
+    pub indices: QueueFamilyIndices,
+    pub support: SwapchainSupport,
+    pub memory: vk::PhysicalDeviceMemoryProperties,
     pub physical_device: vk::PhysicalDevice,
     pub command_buffers: Vec<vk::CommandBuffer>,
     pub secondary_command_buffers: Vec<Vec<vk::CommandBuffer>>,
@@ -54,25 +58,30 @@ impl BfDevice {
 
         let surface = Self::create_surface(&bf_window, &instance)?;
         println!("After create_surface");
+
         let (properties, physical_device) = Self::pick_physical_device(&instance, &surface)?;
         println!("After pick_physical_device");
+
+        let indices = QueueFamilyIndices::get(&instance, &physical_device, &surface)?;
+        let support = SwapchainSupport::get(&instance, &physical_device, &surface)?;
+
         let msaa_samples = Self::get_max_msaa_samples(properties);
         println!("After get_max_msaa_samples");
+
+        let memory = instance.get_physical_device_memory_properties(physical_device);
 
         let (device, graphics_queue, present_queue) = Self::create_logical_device(
             &entry,
             &instance,
             &physical_device,
-            &surface
+            &indices
         )?;
         println!("After create_logical_device");
 
         let (command_pool, command_pools) = Self::create_command_pools(
-            &instance,
-            &physical_device,
-            &surface,
             &device,
-            2
+            2,
+            &indices,
         )?;
         println!("After create_command_pools");
 
@@ -89,7 +98,10 @@ impl BfDevice {
             properties,
             msaa_samples,
             instance,
+            memory,
             physical_device,
+            indices,
+            support,
             command_buffers,
             secondary_command_buffers,
             messenger,
@@ -205,7 +217,7 @@ impl BfDevice {
         physical_device: &vk::PhysicalDevice,
         surface: &vk::SurfaceKHR
     ) -> Result<()> {
-        QueueFamilyIndices::get(&instance, &physical_device, &surface)?;
+        //QueueFamilyIndices::get(&instance, &physical_device, &surface)?;
         Self::check_physical_device_extensions(&instance, &physical_device)?;
 
         let support = SwapchainSupport::get(&instance, &physical_device, &surface)?;
@@ -260,10 +272,8 @@ impl BfDevice {
         entry: &Entry,
         instance: &Instance,
         physical_device: &vk::PhysicalDevice,
-        surface: &vk::SurfaceKHR,
+        indices: &QueueFamilyIndices,
     ) -> Result<(Device, vk::Queue, vk::Queue)> {
-        let indices = QueueFamilyIndices::get(&instance, &physical_device, &surface)?;
-
         let mut unique_indices = HashSet::new();
         unique_indices.insert(indices.graphics);
         unique_indices.insert(indices.present);
@@ -313,17 +323,15 @@ impl BfDevice {
     }
 
     unsafe fn create_command_pools(
-        instance: &Instance,
-        physical_device: &vk::PhysicalDevice,
-        surface: &vk::SurfaceKHR,
         device: &Device,
         num_images: usize,
+        indices: &QueueFamilyIndices,
     ) -> Result<(vk::CommandPool, Vec<vk::CommandPool>)> {
-        let command_pool = Self::create_command_pool(&instance, &physical_device, &surface, &device)?;
+        let command_pool = Self::create_command_pool(&device, &indices)?;
         let mut command_pools: Vec<vk::CommandPool> = Vec::new();
 
         for _ in 0..num_images {
-            let command_pool = Self::create_command_pool(&instance, &physical_device, &surface, &device)?;
+            let command_pool = Self::create_command_pool(&device, &indices)?;
             command_pools.push(command_pool);
         }
 
@@ -331,13 +339,9 @@ impl BfDevice {
     }
 
     unsafe fn create_command_pool(
-        instance: &Instance,
-        physical_device: &vk::PhysicalDevice,
-        surface: &vk::SurfaceKHR,
         device: &Device,
+        indices: &QueueFamilyIndices,
     ) -> Result<vk::CommandPool> {
-        let indices = QueueFamilyIndices::get(&instance, &physical_device, &surface)?;
-
         let info = vk::CommandPoolCreateInfo::builder()
             .flags(vk::CommandPoolCreateFlags::TRANSIENT)
             .queue_family_index(indices.graphics);
@@ -374,6 +378,7 @@ impl BfDevice {
         usage: vk::BufferUsageFlags,
         properties: vk::MemoryPropertyFlags,
     ) -> Result<(vk::Buffer, vk::DeviceMemory)> {
+        println!("in dev create buffer");
         let buffer_info = vk::BufferCreateInfo::builder()
             .size(size)
             .usage(usage)
@@ -381,32 +386,46 @@ impl BfDevice {
             .flags(vk::BufferCreateFlags::empty());
 
         let buffer = self.device.create_buffer(&buffer_info, None)?;
+        println!("after dev create buffer");
 
         let requirements = self.device.get_buffer_memory_requirements(buffer);
+        println!("after dev get buf mem requirements");
 
         let memory_info = vk::MemoryAllocateInfo::builder()
             .allocation_size(requirements.size)
             .memory_type_index(self.get_memory_type_index(properties, requirements)?);
+        println!("after memory type index");
 
         let buffer_memory = self.device.allocate_memory(&memory_info, None)?;
+        println!("after dev allocate mem");
 
         self.device.bind_buffer_memory(buffer, buffer_memory, 0)?;
+        println!("after bind buf mem");
 
         Ok((buffer, buffer_memory))
     }
 
     pub unsafe fn begin_single_time_commands(&self) -> Result<vk::CommandBuffer> {
+        println!("in begin single time commands");
         let info = vk::CommandBufferAllocateInfo::builder()
             .level(vk::CommandBufferLevel::PRIMARY)
             .command_pool(self.command_pool)
             .command_buffer_count(1);
 
-        let command_buffer = self.device.allocate_command_buffers(&info)?[0];
+        println!("before allocate command buffer");
+        dbg!(self, &self.device, &info);
+        let device = self.device.clone();
+        dbg!(&device);
+
+        let result = device.allocate_command_buffers(&info);
+        dbg!(&result);
+        let command_buffer = result?[0];
 
         let info = vk::CommandBufferBeginInfo::builder()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
-        self.device.begin_command_buffer(command_buffer, &info)?;
+        println!("before being cmd buf");
+        device.begin_command_buffer(command_buffer, &info)?;
 
         Ok(command_buffer)
     }
@@ -432,12 +451,16 @@ impl BfDevice {
         destination: vk::Buffer,
         size: vk::DeviceSize,
     ) -> Result<()> {
+        println!("In copy_buffer");
         let command_buffer = self.begin_single_time_commands()?;
+        println!("after begin single time commands");
 
         let regions = vk::BufferCopy::builder().size(size);
         self.device.cmd_copy_buffer(command_buffer, source, destination, &[regions]);
+        println!("after cmd copy buff");
 
         self.end_single_time_commands(command_buffer)?;
+        println!("after end single time commands");
 
         Ok(())
     }
@@ -526,12 +549,10 @@ impl BfDevice {
         properties: vk::MemoryPropertyFlags,
         requirements: vk::MemoryRequirements,
     ) -> Result<u32> {
-        let memory = self.instance.get_physical_device_memory_properties(self.physical_device);
-
-        (0..memory.memory_type_count)
+        (0..self.memory.memory_type_count)
             .find(|i| {
                 let suitable = (requirements.memory_type_bits & (1 << i)) != 0;
-                let memory_type = memory.memory_types[*i as usize];
+                let memory_type = self.memory.memory_types[*i as usize];
                 suitable && memory_type.property_flags.contains(properties)
             })
             .ok_or_else(|| anyhow!("Failed to find suitable memory type."))
